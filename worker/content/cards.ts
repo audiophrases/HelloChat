@@ -1,0 +1,117 @@
+// Cards for the "choose, then say why" games: Would you rather…?, This or that? and Agree or disagree?
+import type { Level } from '../../shared/protocol.ts';
+
+export type Choice = { id: string; level: Level; q: string; options: { emoji: string; label: string }[] };
+
+const two = (id: string, level: Level, q: string, a: [string, string], b: [string, string]): Choice =>
+    ({ id, level, q, options: [{ emoji: a[0], label: a[1] }, { emoji: b[0], label: b[1] }] });
+
+export const WOULD_YOU_RATHER: Choice[] = [
+    two('w1', 'A1', 'Would you rather have…', ['🐶', 'a dog'], ['🐱', 'a cat']),
+    two('w2', 'A1', 'Would you rather eat…', ['🍕', 'pizza every day'], ['🍦', 'ice cream every day']),
+    two('w3', 'A1', 'Would you rather live…', ['🏖️', 'at the beach'], ['⛰️', 'in the mountains']),
+    two('w4', 'A1', 'Would you rather be…', ['🦅', 'a bird'], ['🐬', 'a dolphin']),
+    two('w5', 'A1', 'Would you rather have…', ['🚲', 'a fast bike'], ['🛹', 'a cool skateboard']),
+    two('w6', 'A1', 'Would you rather play…', ['⚽', 'football'], ['🏀', 'basketball']),
+    two('w7', 'A1', 'Would you rather go to school…', ['🚌', 'by bus'], ['🚁', 'by helicopter']),
+    two('w8', 'A1', 'Would you rather have…', ['❄️', 'winter all year'], ['☀️', 'summer all year']),
+    two('w9', 'A1', 'Would you rather be…', ['🦒', 'very tall'], ['🐭', 'very small']),
+    two('w10', 'A1', 'Would you rather have a pet…', ['🐉', 'dragon'], ['🦄', 'unicorn']),
+    two('w11', 'A1', 'Would you rather drink…', ['🥛', 'only milk'], ['🧃', 'only juice']),
+    two('w12', 'A1', 'Would you rather have…', ['🍫', 'a chocolate house'], ['🍭', 'a candy car']),
+    two('w13', 'A2', 'Would you rather…', ['🧠', 'be able to read minds'], ['🕊️', 'be able to fly']),
+    two('w14', 'A2', 'Would you rather…', ['📵', 'have no phone for a month'], ['🍬', 'eat no sweets for a year']),
+    two('w15', 'A2', 'Would you rather live…', ['🏰', 'in a castle'], ['🚀', 'in a spaceship']),
+    two('w16', 'A2', 'Would you rather…', ['⏪', 'travel to the past'], ['⏩', 'travel to the future']),
+    two('w17', 'A2', 'Would you rather be…', ['🎤', 'a famous singer'], ['⚽', 'a famous footballer']),
+    two('w18', 'A2', 'Would you rather…', ['🐠', 'breathe under water'], ['🦎', 'climb walls like a lizard']),
+    two('w19', 'A2', 'Would you rather have…', ['🤖', 'a robot that does your homework'], ['👨‍🍳', 'a chef that cooks anything']),
+    two('w20', 'A2', 'Would you rather…', ['🌙', 'never sleep'], ['🍽️', 'never eat']),
+    two('w21', 'A2', 'Would you rather…', ['🗣️', 'speak every language'], ['🎹', 'play every instrument']),
+    two('w22', 'A2', 'Would you rather have school…', ['🌅', 'only in the morning, every day'], ['📅', 'all day, but only three days a week']),
+    two('w23', 'A2', 'Would you rather meet…', ['👽', 'an alien'], ['🦖', 'a dinosaur']),
+    two('w24', 'A2', 'Would you rather…', ['🫥', 'be invisible'], ['⚡', 'be super fast']),
+    two('w25', 'A2', 'Would you rather lose…', ['📱', 'your phone'], ['🔑', 'your house keys']),
+    two('w26', 'A2', 'Would you rather always be…', ['🥵', 'a bit too hot'], ['🥶', 'a bit too cold']),
+    two('w27', 'B1', 'Would you rather…', ['💰', 'be rich but have no free time'], ['🏝️', 'have lots of free time but little money']),
+    two('w28', 'B1', 'Would you rather…', ['📖', 'know how your life will end'], ['🎁', 'be surprised by everything']),
+    two('w29', 'B1', 'Would you rather…', ['🌍', 'be able to change the past'], ['🔭', 'be able to see the future']),
+    two('w30', 'B1', 'Would you rather…', ['🏆', 'be the best player in a bad team'], ['🤝', 'be the worst player in a great team']),
+    two('w31', 'B1', 'Would you rather live…', ['🏙️', 'in a huge city with no nature'], ['🌲', 'in the forest with no internet']),
+    two('w32', 'B1', 'Would you rather…', ['😶', 'never be able to lie'], ['🙉', 'never know when others are lying']),
+    two('w33', 'B1', 'Would you rather…', ['🎬', 'star in a film'], ['✍️', 'write a famous book']),
+    two('w34', 'B1', 'Would you rather have…', ['👥', 'one true friend'], ['🎉', 'a hundred fun friends']),
+    two('w35', 'B1', 'Would you rather…', ['🧳', 'travel the world for a year alone'], ['🏠', 'stay home for a year with your friends']),
+    two('w36', 'B1', 'Would you rather…', ['🔁', 'live the same perfect day for ever'], ['🎲', 'never know what tomorrow brings']),
+];
+
+export const THIS_OR_THAT: Choice[] = [
+    two('t1', 'A1', 'Which do you like more?', ['🍎', 'apples'], ['🍌', 'bananas']),
+    two('t2', 'A1', 'Which do you like more?', ['🌞', 'day'], ['🌜', 'night']),
+    two('t3', 'A1', 'Which do you like more?', ['📺', 'TV'], ['📚', 'books']),
+    two('t4', 'A1', 'Which do you like more?', ['🍔', 'burgers'], ['🌭', 'hot dogs']),
+    two('t5', 'A1', 'Which do you like more?', ['🏊', 'swimming'], ['🏃', 'running']),
+    two('t6', 'A1', 'Which do you like more?', ['🔴', 'red'], ['🔵', 'blue']),
+    two('t7', 'A1', 'Which do you like more?', ['🎂', 'cake'], ['🍪', 'biscuits']),
+    two('t8', 'A1', 'Which do you like more?', ['🎵', 'music'], ['🎨', 'art']),
+    two('t9', 'A1', 'Which do you like more?', ['🌧️', 'rain'], ['🌨️', 'snow']),
+    two('t10', 'A1', 'Which do you like more?', ['🧮', 'maths'], ['🔬', 'science']),
+    two('t11', 'A1', 'Which do you like more?', ['🚗', 'cars'], ['🚆', 'trains']),
+    two('t12', 'A1', 'Which do you like more?', ['🐎', 'horses'], ['🐇', 'rabbits']),
+    two('t13', 'A2', 'Which is better?', ['🎧', 'listening to music'], ['🎮', 'playing video games']),
+    two('t14', 'A2', 'Which is better?', ['🏕️', 'camping'], ['🏨', 'staying in a hotel']),
+    two('t15', 'A2', 'Which is better?', ['🌃', 'staying up late'], ['🌄', 'getting up early']),
+    two('t16', 'A2', 'Which is better?', ['🍿', 'the cinema'], ['🛋️', 'a film at home']),
+    two('t17', 'A2', 'Which is better?', ['💬', 'texting'], ['📞', 'calling']),
+    two('t18', 'A2', 'Which is better?', ['🧑‍🤝‍🧑', 'a big party'], ['👫', 'a day with one friend']),
+    two('t19', 'A2', 'Which is better?', ['🏫', 'school trips'], ['🎭', 'school shows']),
+    two('t20', 'A2', 'Which is better?', ['🍳', 'cooking'], ['🥡', 'takeaway food']),
+    two('t21', 'B1', 'Which matters more?', ['🧠', 'being intelligent'], ['😄', 'being funny']),
+    two('t22', 'B1', 'Which matters more?', ['💼', 'a job you love'], ['💶', 'a job that pays well']),
+    two('t23', 'B1', 'Which matters more?', ['🍀', 'luck'], ['💪', 'hard work']),
+    two('t24', 'B1', 'Which matters more?', ['🗺️', 'experiences'], ['🎁', 'things you own']),
+];
+
+const three = (id: string, level: Level, statement: string): Choice =>
+    ({ id, level, q: statement, options: [{ emoji: '👍', label: 'I agree' }, { emoji: '👎', label: 'I disagree' }, { emoji: '🤷', label: 'It depends' }] });
+
+export const AGREE: Choice[] = [
+    three('g1', 'A1', 'Cats are better than dogs.'),
+    three('g2', 'A1', 'Homework is fun.'),
+    three('g3', 'A1', 'Pizza is the best food.'),
+    three('g4', 'A1', 'Summer is the best season.'),
+    three('g5', 'A1', 'Football is boring.'),
+    three('g6', 'A1', 'English is easy.'),
+    three('g7', 'A1', 'Mornings are great.'),
+    three('g8', 'A1', 'Vegetables are delicious.'),
+    three('g9', 'A1', 'School is fun.'),
+    three('g10', 'A1', 'Rainy days are nice.'),
+    three('g11', 'A2', 'Children should have a phone at ten.'),
+    three('g12', 'A2', 'School should start at ten o’clock.'),
+    three('g13', 'A2', 'Books are better than films.'),
+    three('g14', 'A2', 'Everybody should play a sport.'),
+    three('g15', 'A2', 'Video games are a good hobby.'),
+    three('g16', 'A2', 'It is better to live in a city than in a village.'),
+    three('g17', 'A2', 'Students should wear a uniform.'),
+    three('g18', 'A2', 'Friends are more important than family.'),
+    three('g19', 'A2', 'Fast food should be more expensive.'),
+    three('g20', 'A2', 'Every family should have a pet.'),
+    three('g21', 'A2', 'There should be no homework at the weekend.'),
+    three('g22', 'A2', 'It is good to be famous.'),
+    three('g23', 'B1', 'Social media does more harm than good.'),
+    three('g24', 'B1', 'Money can buy happiness.'),
+    three('g25', 'B1', 'Exams are the best way to test students.'),
+    three('g26', 'B1', 'Robots will take most people’s jobs.'),
+    three('g27', 'B1', 'Zoos should be closed.'),
+    three('g28', 'B1', 'Young people today have an easier life than their parents had.'),
+    three('g29', 'B1', 'Everyone should learn to code.'),
+    three('g30', 'B1', 'It is never OK to lie.'),
+    three('g31', 'B1', 'Cars should be banned from city centres.'),
+    three('g32', 'B1', 'People learn more from failure than from success.'),
+];
+
+export const REASONS: Record<Level, string[]> = {
+    A1: ['I like … because …', 'because it is fun', 'because I love …', 'Why?', 'Me too!'],
+    A2: ['I chose … because …', 'I think … is better because …', 'Why did you choose …?', 'I agree, because …', 'I don’t agree, because …'],
+    B1: ['I’d rather … because …', 'The main reason is that …', 'What made you choose …?', 'I see what you mean, but …', 'It depends on …'],
+};

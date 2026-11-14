@@ -1,0 +1,137 @@
+.avatar-editor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  margin: 0 auto;
+  color: #fff;
+}
+
+.avatar-editor-fields { display: flex; flex-direction: column; align-items: center; gap: 1rem; width: 100%; min-width: 0; box-sizing: border-box; border: 0; margin: 0; padding: 0; }
+.avatar-editor-fields:disabled { opacity: .7; }
+
+/* As in PinPlay: the character on one side, the parts list on the other, side by side when there is room. */
+.avatar-builder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.avatar-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .6rem;
+}
+
+.avatar-preview {
+  width: 150px;
+  height: 150px;
+  background-color: #ecebff;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+.avatar-preview svg {
+  width: 120%;
+  height: 120%;
+  transform: translateY(10%);
+}
+
+.avatar-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+  flex: 1 1 220px;
+  max-width: 300px;
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-label {
+  font-weight: 600;
+  font-size: .9rem;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
+
+.control-label small {
+  font-weight: 400;
+  opacity: .75;
+}
+
+.avatar-step {
+  width: 34px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--text-dark);
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.avatar-step:hover { border-color: var(--primary); }
+.avatar-step:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.editor-actions {
+  display: flex;
+  gap: .75rem;
+  width: 100%;
+}
+
+.editor-actions .btn {
+  flex: 1;
+}
+
+.character-voice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.character-voice .input-field {
+  width: 100%;
+  min-width: 0;
+  padding: .5rem .75rem;
+  border-radius: 8px;
+}
+
+.character-voice p, .character-voice .control-label {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
+
+.character-voice p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.character-voice-error {
+  color: var(--danger, #fca5a5);
+}
+
+.avatar-loading {
+  text-align: center;
+  padding: 2rem;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 0.8rem;
+}

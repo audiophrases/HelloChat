@@ -1,0 +1,40 @@
+{
+  "name": "hello-chat",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:worker": "wrangler dev",
+    "classroom": "npm run build && node scripts/classroom.mjs",
+    "build": "wrangler types worker/runtime.d.ts --include-env=false && tsc -b && vite build",
+    "lint": "oxlint",
+    "test": "node --test \"worker/tests/*.test.mjs\"",
+    "test:live": "npm run build && node scripts/live-test.mjs",
+    "deploy": "npm run build && wrangler deploy",
+    "tester": "node scripts/tester.mjs"
+  },
+  "dependencies": {
+    "dictionary-en": "^4.0.0",
+    "dictionary-en-gb": "^3.0.0",
+    "nspell": "^2.1.5",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/nspell": "^2.1.6",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "^0.28.1",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "wrangler": "^4.149.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260923.1": true
+  }
+}
