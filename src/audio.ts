@@ -14,7 +14,7 @@ export type SoundDependencies = {
   play: (bytes: ArrayBuffer, signal: AbortSignal, volume: number) => Promise<void>;
 };
 
-const muteKey = (studentKey: string) => `pixelplaza.sound-muted.v1:${studentKey}`;
+const muteKey = (studentKey: string) => `hellochat.sound-muted.v1:${studentKey}`;
 export function soundIsMuted(studentKey: string): boolean {
   try { return localStorage.getItem(muteKey(studentKey)) === 'true'; }
   catch { return false; } // sound starts ON, including when storage is unavailable
@@ -128,7 +128,7 @@ export class GameAudio {
     this.studentKey = studentKey;
     this.state = { muted: soundIsMuted(studentKey), locked: false, messageId: null, needsInteraction: false, error: '' };
     this.dependencies = dependencies ?? {
-      speech: (id, signal) => fetchAudio('/api/plaza/speech', signal, token, { id }),
+      speech: (id, signal) => fetchAudio('/api/room/speech', signal, token, { id }),
       effect: (path, signal) => fetchAudio(path, signal),
       play: playBytes,
     };
@@ -291,12 +291,12 @@ export function stopVoicePreview(): void { preview?.abort(); preview = null; }
 
 export async function previewCharacterVoice(voice: string, token: string, studentKey?: string): Promise<void> {
   stopVoicePreview();
-  if (studentKey && soundIsMuted(studentKey)) throw new Error('Sound is muted. Turn sound on in the Plaza to preview your voice.');
+  if (studentKey && soundIsMuted(studentKey)) throw new Error('Sound is muted. Turn sound on in the game to preview your voice.');
   unlockSound();
   const controller = new AbortController();
   preview = controller;
   try {
-    const bytes = await fetchAudio('/api/plaza/voice-preview', controller.signal, token, { voice });
+    const bytes = await fetchAudio('/api/room/voice-preview', controller.signal, token, { voice });
     if (!controller.signal.aborted) await playBytes(bytes, controller.signal, 1);
   } catch (cause) {
     if (!controller.signal.aborted) {

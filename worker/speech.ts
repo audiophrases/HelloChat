@@ -1,7 +1,7 @@
 // Reuse PinPlay's Render Edge TTS bridge directly. Its public quiz-cache proxy
 // is deliberately bypassed for student/private chat.
 export const DEFAULT_EDGE_TTS_URL = 'https://pinplay-tts-bridge-27sk.onrender.com/tts';
-export const VOICE_SAMPLE = 'Hello! This is my voice in Pixel Plaza.';
+export const VOICE_SAMPLE = 'Hello! This is my voice in HelloChat.';
 type SpeechEnv = { EDGE_TTS_URL?: string; EDGE_TTS_SECRET?: string };
 export type SpokenMessage = { text: string; voice: string };
 

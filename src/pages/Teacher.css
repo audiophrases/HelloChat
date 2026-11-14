@@ -1,0 +1,106 @@
+@import './Play.css';
+
+.teacher { min-height: 100%; display: flex; flex-direction: column; }
+.t-signin { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.t-signin form { padding: 2rem; display: flex; flex-direction: column; gap: .7rem; width: 100%; max-width: 360px; }
+.t-signin h1 { color: var(--primary); font-size: 2.2rem; }
+.t-error { color: #c2244a; font-weight: 700; }
+
+.t-top { display: flex; align-items: center; gap: .8rem; padding: .5rem 1rem; background: #fff; border-bottom: 1px solid var(--line); flex-wrap: wrap; position: sticky; top: 0; z-index: 20; }
+.t-logo { font-family: var(--display); font-size: 1.3rem; color: var(--primary); }
+.t-logo small { color: var(--ink-soft); font-family: var(--font); font-size: .8rem; }
+.t-pin { display: flex; flex-direction: column; align-items: center; border: 3px solid var(--gold); background: var(--gold-soft); border-radius: 14px; padding: .1rem .9rem; line-height: 1.05; }
+.t-pin small { font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.t-pin b { font-family: var(--display); font-size: 1.9rem; letter-spacing: .12em; }
+.t-count { font-weight: 800; }
+.t-toggle { display: flex; align-items: center; gap: .3rem; font-weight: 700; font-size: .92rem; }
+.t-toggle select, .t-option-row select { border: 2px solid var(--line); border-radius: 8px; padding: .15rem .3rem; background: #fff; }
+.t-space { flex: 1; }
+.t-warn { color: #9a6200; font-weight: 800; font-size: .85rem; }
+.t-flash { background: var(--primary); color: #fff; font-weight: 800; text-align: center; padding: .4rem; }
+
+.t-closed { margin: 3rem auto; padding: 2rem; max-width: 560px; display: flex; flex-direction: column; gap: 1rem; }
+.t-closed ol { padding-left: 1.3rem; display: flex; flex-direction: column; gap: .4rem; font-weight: 600; }
+
+.t-main { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr) 250px; gap: 1rem; padding: 1rem; align-items: start; }
+.t-col { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.t-col > .card { padding: 1rem; }
+.t-col h2 { font-size: 1.35rem; }
+.t-col h3 { font-size: 1.1rem; margin-bottom: .4rem; }
+.t-col h3 small { font-family: var(--font); font-weight: 700; color: var(--ink-soft); font-size: .8rem; margin-left: .3rem; }
+@media (max-width: 1100px) { .t-main { grid-template-columns: 1fr; } }
+
+.t-starter { display: flex; flex-direction: column; gap: .6rem; }
+.t-tabs { display: flex; gap: .3rem; flex-wrap: wrap; }
+.t-tabs button { border: 2px solid var(--line); background: #fff; border-radius: 99px; padding: .3rem .8rem; font-weight: 800; }
+.t-tabs button.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.t-games { display: flex; flex-direction: column; gap: .35rem; max-height: 46vh; overflow-y: auto; padding-right: 2px; }
+.t-game { display: flex; gap: .6rem; align-items: center; text-align: left; border: 2px solid var(--line); background: #fff; border-radius: 12px; padding: .45rem .6rem; }
+.t-game:hover { border-color: var(--primary); }
+.t-game.on { border-color: var(--primary); background: var(--primary-soft); }
+.t-game-icon { font-size: 1.7rem; }
+.t-game strong, .t-game small, .t-game em { display: block; }
+.t-game small { color: var(--ink-soft); font-weight: 600; line-height: 1.2; }
+.t-game em { font-style: normal; font-size: .75rem; font-weight: 800; color: var(--primary-dark); }
+.t-options { border: 3px solid var(--go); background: var(--go-soft); border-radius: 14px; padding: .8rem; display: flex; flex-direction: column; gap: .6rem; }
+.t-how { padding-left: 1.2rem; font-weight: 600; font-size: .92rem; }
+.t-option-row { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.t-option-row label { display: flex; flex-direction: column; gap: .15rem; font-weight: 800; font-size: .85rem; }
+.t-custom summary { font-weight: 800; cursor: pointer; }
+.t-custom { display: flex; flex-direction: column; gap: .4rem; }
+.t-custom textarea { margin: .4rem 0; }
+
+.t-session { border: 3px solid var(--go); display: flex; flex-direction: column; gap: .5rem; }
+.t-clock { font-family: var(--display); font-size: 1.4rem; font-weight: 800; color: var(--go); }
+.t-session-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.t-say { display: flex; gap: .4rem; }
+.t-say input { flex: 1; min-width: 0; padding: .5rem .7rem; }
+.t-report-item { display: flex; gap: .6rem; align-items: flex-start; justify-content: space-between; border-top: 1px solid var(--line); padding: .5rem 0; }
+.t-report-item p { font-weight: 600; margin-top: .15rem; overflow-wrap: anywhere; }
+.t-report-item small { color: var(--ink-soft); }
+
+.t-alerts { border: 3px solid var(--pink); }
+.t-alert { display: flex; gap: .5rem; align-items: center; padding: .3rem 0; border-top: 1px solid var(--line); }
+.t-alert-text { flex: 1; overflow-wrap: anywhere; font-weight: 600; }
+.t-alert.quiet { opacity: .8; }
+.t-empty { padding: 1.2rem; font-weight: 700; color: var(--ink-soft); }
+.t-table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .7rem; }
+.t-table { text-align: left; padding: .7rem .8rem; border: 3px solid transparent; display: flex; flex-direction: column; gap: .35rem; }
+.t-table:hover { border-color: var(--primary); }
+.t-table.silent { border-color: var(--gold); }
+.t-table.over { opacity: .7; }
+.t-table header { display: flex; justify-content: space-between; gap: .5rem; font-weight: 800; }
+.t-table header small { color: var(--ink-soft); font-weight: 700; white-space: nowrap; }
+.t-table-members { display: flex; flex-wrap: wrap; gap: .3rem; }
+.t-table-members span { background: var(--primary-soft); border-radius: 99px; padding: .05rem .55rem; font-weight: 800; font-size: .9rem; }
+.t-table-members span.away { opacity: .45; text-decoration: line-through; }
+.t-table-members small { font-weight: 700; color: var(--ink-soft); }
+.t-table-status { font-size: .85rem; color: var(--go); font-weight: 800; }
+.t-table-last p { font-size: .88rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-table-last b { color: var(--ink); }
+
+.t-students { gap: .15rem !important; max-height: calc(100vh - 6rem); overflow-y: auto; position: sticky; top: 4.5rem; }
+.t-student { display: flex; align-items: center; gap: .45rem; border: 0; background: none; text-align: left; padding: .25rem .3rem; border-radius: 10px; width: 100%; }
+.t-student:hover { background: var(--primary-soft); }
+.t-student.away { opacity: .45; }
+.t-student-name { flex: 1; font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-student-name small { font-weight: 600; color: var(--ink-soft); }
+.t-student-stats { font-size: .78rem; font-weight: 700; color: var(--ink-soft); white-space: nowrap; }
+.t-chip { background: var(--gold-soft); border-radius: 99px; padding: 0 .4rem; font-size: .72rem; font-weight: 800; }
+
+.t-drawer { width: min(640px, 100%); max-height: 92vh; padding: 1rem; display: flex; flex-direction: column; gap: .5rem; }
+.t-drawer header { display: flex; justify-content: space-between; align-items: center; }
+.t-transcript { flex: 1; min-height: 200px; overflow-y: auto; background: #f7f8fd; border-radius: 12px; padding: .6rem; display: flex; flex-direction: column; gap: .25rem; }
+.t-line { display: flex; gap: .5rem; align-items: baseline; font-weight: 600; }
+.t-line time { font-size: .72rem; color: var(--ink-soft); flex: none; }
+.t-line > span { flex: 1; overflow-wrap: anywhere; }
+.t-line.sys { color: var(--ink-soft); font-size: .9rem; }
+.t-line.teacher { background: var(--gold-soft); border-radius: 8px; padding: 0 .3rem; }
+.t-line.s-blocked, .t-line.s-removed { color: #a51d3d; }
+.t-line.s-blocked > span, .t-line.s-removed > span { text-decoration: line-through; }
+.t-line em { font-style: normal; font-size: .8rem; color: #a51d3d; text-decoration: none; display: inline-block; }
+.t-line small { color: var(--ink-soft); }
+.t-line button { border: 0; background: none; opacity: .5; }
+.t-line button:hover { opacity: 1; }
+.t-report textarea { font-family: ui-monospace, monospace; font-size: .8rem; }
+.t-report ul { padding-left: 1.2rem; max-height: 140px; overflow: auto; }

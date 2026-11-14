@@ -29,7 +29,9 @@ const PEOPLE_ASK = ['Has your person got glasses?', 'Is your person wearing a ha
 // Twelve people who differ in ways a learner can ask about: hair, hat, glasses, clothes.
 function makePeople(ctx: Ctx): Card[] {
     const int = (count: number) => Math.floor(ctx.rnd() * count);
-    return sample(PEOPLE, 12, ctx.rnd).map((name, index) => ({
+    // Never a classmate's own name: "Is your person Ben?" must not mean the Ben at the table.
+    const taken = ctx.players.map(player => player.name.toLowerCase());
+    return sample(PEOPLE.filter(name => !taken.includes(name.toLowerCase())), 12, ctx.rnd).map((name, index) => ({
         id: `p${index}`, word: name,
         look: { head: 0, skin: int(20), hairColor: int(25), hair: int(29), eyes: int(37), mouth: int(41), glasses: ctx.rnd() < 0.4 ? 1 + int(16) : 0, shirt: int(28), hat: ctx.rnd() < 0.35 ? 1 + int(28) : 0 },
     }));
@@ -158,7 +160,7 @@ function makeWho(def: Pick<Game, 'id' | 'kind' | 'title' | 'icon' | 'blurb' | 'h
                 board: [
                     { w: 'card', tone: 'secret', label: 'Only you can see this', emoji: s.people ? '🤫' : mine?.emoji, title: s.people ? `Your person: ${mine?.word ?? '?'}` : `You are ${named(s, mine)}`,
                         text: s.people ? 'Find your person in the pictures. Answer questions about them.' : 'Don’t say this word. Answer Yes or No.' },
-                    { w: 'grid', cols: 4, cells, act: 'guess', cross: true, label: s.people ? `Who is ${targetName}’s person?` : `What is ${targetName}?` },
+                    { w: 'grid', cols: s.people ? 6 : 4, cells, act: 'guess', cross: true, label: s.people ? `Who is ${targetName}’s person?` : `What is ${targetName}?` },
                     { w: 'meter', label: 'Guesses left', icon: '❤️', value: 3 - (s.wrong[me] ?? 0), max: 3 },
                 ],
                 timer: s.phase === 'play' ? timer(s, PLAY_MS) : null,

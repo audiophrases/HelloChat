@@ -11,7 +11,6 @@ type State = Base & {
 };
 const PICK_MS = 30_000;
 const TALK_MS = 90_000;
-const NEXT_MS = 6000;
 
 function make(def: Pick<Game, 'id' | 'title' | 'icon' | 'blurb' | 'how' | 'example' | 'levels'>, cards: Choice[]): Game<State> {
     const deck = (level: Level) => forLevel(cards, level);
@@ -40,13 +39,12 @@ function make(def: Pick<Game, 'id' | 'title' | 'icon' | 'blurb' | 'how' | 'examp
             dealCard(s, ctx);
             return s;
         },
-        chat(s, ctx, from, text) {
+        chat(s, _ctx, from, text) {
             if (s.over || s.phase !== 'talk' || s.said.includes(from) || wordCount(text) < 4) return {};
             s.said.push(from);
             star(s, from, says(text, 'because') ? 2 : 1);
-            const out: Out = { fx: [{ to: from, kind: 'star' }] };
-            if (ctx.players.every(player => s.said.includes(player.key))) { s.phase = 'next'; s.due = ctx.now + NEXT_MS; }
-            return out;
+            // Everyone has given a reason: the card stays, so the table can go on talking until someone takes the next one.
+            return { fx: [{ to: from, kind: 'star' }] };
         },
         act(s, ctx, from, act, data) {
             if (s.over) return {};
@@ -82,7 +80,8 @@ function make(def: Pick<Game, 'id' | 'title' | 'icon' | 'blurb' | 'how' | 'examp
                     : s.phase === 'pick' ? (picked
                         ? { tone: 'wait', text: `Waiting for ${list(waiting)} to choose…` }
                         : { tone: 'go', text: 'Choose one!', sub: 'Your table can’t see your choice yet.' })
-                        : s.phase === 'talk' ? (s.said.includes(me)
+                        : s.phase === 'talk' ? (ctx.players.every(player => s.said.includes(player.key)) ? { tone: 'go', text: 'Great reasons! Ask each other more, or take the next card.' }
+                            : s.said.includes(me)
                             ? { tone: 'go', text: `Now ask ${othersNames(ctx, me)} about their choice.`, sub: 'Do you agree with them?' }
                             : { tone: 'go', text: `Tell ${othersNames(ctx, me)} WHY you chose it.`, sub: 'Use “because” for 2 stars.' })
                             : { tone: 'wait', text: 'Next card…' },

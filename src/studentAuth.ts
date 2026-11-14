@@ -11,7 +11,7 @@ export type StudentConfig = {
   laptopUrl?: string | null; signInUrl?: string;
 };
 
-const sessionKey = 'pixelplaza.student.v1';
+const sessionKey = 'hellochat.student.v1';
 
 const handOffKey = 'session';
 
@@ -42,7 +42,7 @@ export function handOffTo(laptopUrl: string, session: StudentSession, pin = ''):
   window.location.assign(target);
 }
 
-const pinKey = 'pixelplaza.join-pin';
+const pinKey = 'hellochat.join-pin';
 const validPin = (value: string | null): string => (value && /^\d{4,8}$/.test(value) ? value : '');
 
 // The class PIN a join link carries (https://.../?pin=123456), whether it arrived in the address or was

@@ -630,7 +630,7 @@ export class ChatRoom extends DurableObject<Env> {
         // One seat per student: a newer window takes over.
         for (const old of this.sockets(key)) {
             old.serializeAttachment({ key, left: true } satisfies Seat);
-            try { old.close(CLOSE_REPLACED, 'Opened in another window.'); } catch { /* already closing */ }
+            try { old.send(JSON.stringify({ t: 'bye', why: 'replaced' } satisfies ServerMessage)); old.close(CLOSE_REPLACED, 'Opened in another window.'); } catch { /* already closing */ }
         }
         this.ctx.acceptWebSocket(server, [key]);
         server.serializeAttachment({ key } satisfies Seat);
@@ -639,7 +639,7 @@ export class ChatRoom extends DurableObject<Env> {
         const before = this.shown;
         this.shown = null;
         const names = this.names();
-        this.send(key, { t: 'welcome', me: this.me(key), names: this.wordList(), soundOff: this.soundOff(key), muted: this.muted(key) });
+        this.send(key, { t: 'welcome', me: this.me(key), names: this.wordList(), soundOff: this.soundOff(key), muted: this.muted(key), hints: !!this.env.OPENAI_API_KEY });
         // A namesake arrived, so someone's shown name changed: everyone's tables are redrawn with the new names.
         if (before && [...before].some(([student, name]) => names.get(student) !== name)) this.renameEveryone();
         else this.toAll({ t: 'names', names: this.wordList() });
@@ -936,7 +936,7 @@ export class ChatRoom extends DurableObject<Env> {
         this.session = null; this.queue = {}; this.queueAt = {}; this.gone = {};
         if (!open) {
             this.saveSetting('open', '0');
-            for (const ws of this.ctx.getWebSockets()) { try { ws.close(CLOSE_CLASS_CLOSED, 'The class is closed.'); } catch { /* already closing */ } }
+            for (const ws of this.ctx.getWebSockets()) { try { ws.send(JSON.stringify({ t: 'bye', why: 'closed' } satisfies ServerMessage)); ws.close(CLOSE_CLASS_CLOSED, 'The class is closed.'); } catch { /* already closing */ } }
         } else {
             // A new lesson: a new PIN, and yesterday's quiet students are not today's.
             const digits = crypto.getRandomValues(new Uint32Array(1))[0] % 900_000 + 100_000;

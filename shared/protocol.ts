@@ -97,7 +97,7 @@ export type LoungeInfo = {
 export type Me = { key: string; name: string; look: Look; style: Style; xp: number };
 
 export type ServerMessage =
-    | { t: 'welcome'; me: Me; names: string[]; soundOff: boolean; muted: boolean }
+    | { t: 'welcome'; me: Me; names: string[]; soundOff: boolean; muted: boolean; hints: boolean }
     | { t: 'lounge'; lounge: LoungeInfo }
     | { t: 'table'; table: TableInfo | null; why?: string }
     | { t: 'view'; id: string; view: View }
@@ -115,7 +115,8 @@ export type ServerMessage =
     | { t: 'me'; me: Me }
     | { t: 'sound'; off: boolean }
     | { t: 'muted'; muted: boolean }
-    | { t: 'names'; names: string[] };
+    | { t: 'names'; names: string[] }
+    | { t: 'bye'; why: 'replaced' | 'closed' };   // sent just before the server closes the connection
 
 export type ClientMessage =
     | { t: 'chat'; text: string; cid: string; was?: string; better?: string }

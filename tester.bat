@@ -4,7 +4,7 @@ rem its own browser tab. No Google sign-in. Double-click for 4 players, or run
 rem "tester.bat 6" for more (up to 8); add noai ("tester.bat 4 noai") to skip the
 rem OpenAI checks, or "random" for made-up names. Close this window to stop.
 cd /d "%~dp0"
-title Pixel Plaza - tester
+title HelloChat - tester
 
 where node >nul 2>nul || (echo Node.js is not installed. Get it from https://nodejs.org & pause & exit /b 1)
 

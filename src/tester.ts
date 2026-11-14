@@ -4,7 +4,7 @@ import type { AvatarConfig } from './utils/AvatarRenderer';
 // tester.bat opens http://localhost:8788/?tester=Ana&pin=123456 in each tab. That
 // signs the tab in as a made-up student (the tester server accepts it, nobody
 // else does) and Login walks straight into the class.
-const pinKey = 'pixelplaza.tester.pin';
+const pinKey = 'hellochat.tester.pin';
 
 export function receiveTester(): void {
   const params = new URLSearchParams(window.location.search);

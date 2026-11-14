@@ -4,8 +4,8 @@
 //
 //   npm run classroom
 //
-// PLAZA_LAN_URL overrides the address students' laptops use to reach this one;
-// PLAZA_CLOUD_URL the online site where they sign in.
+// HELLOCHAT_LAN_URL overrides the address students' laptops use to reach this one;
+// HELLOCHAT_CLOUD_URL the online site where they sign in.
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process';
 const root = path.join(import.meta.dirname, '..');
 const wrangler = path.join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 const port = Number(process.env.PORT || 8787);
-const cloudUrl = process.env.PLAZA_CLOUD_URL || 'https://pixel-plaza.eugenime.workers.dev';
+const cloudUrl = process.env.HELLOCHAT_CLOUD_URL || 'https://hello-chat.eugenime.workers.dev';
 
 // The school network address: a private IPv4 address, Wi-Fi or cable.
 function lanAddress() {
@@ -23,14 +23,14 @@ function lanAddress() {
 }
 
 const address = lanAddress();
-const lanUrl = process.env.PLAZA_LAN_URL || (address && `http://${address}:${port}`);
+const lanUrl = process.env.HELLOCHAT_LAN_URL || (address && `http://${address}:${port}`);
 if (!lanUrl) {
-    console.error('No network connection found. Connect to the school network, or set PLAZA_LAN_URL.');
+    console.error('No network connection found. Connect to the school network, or set HELLOCHAT_LAN_URL.');
     process.exit(1);
 }
 
 console.log(`
-  Pixel Plaza is running on this laptop.
+  HelloChat is running on this laptop.
 
   Teacher controls (on this laptop):  http://localhost:${port}/teacher
   Students sign in at:                ${cloudUrl}

@@ -2,7 +2,7 @@
 rem Runs the class on this laptop and opens the teacher controls. Double-click
 rem to run; keep the window open during the lesson. Close it to stop the class.
 cd /d "%~dp0"
-title Pixel Plaza - class server
+title HelloChat - class server
 
 where node >nul 2>nul || (echo Node.js is not installed. Get it from https://nodejs.org & pause & exit /b 1)
 
