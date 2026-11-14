@@ -104,3 +104,24 @@
 .t-line button:hover { opacity: 1; }
 .t-report textarea { font-family: ui-monospace, monospace; font-size: .8rem; }
 .t-report ul { padding-left: 1.2rem; max-height: 140px; overflow: auto; }
+
+.t-tools { margin: 1rem 1rem 0; padding: .8rem 1rem; display: flex; flex-wrap: wrap; gap: .7rem 1.5rem; }
+.t-tools details { min-width: 200px; flex: 1; }
+.t-tools details[open] { flex-basis: 100%; }
+.t-tools summary { font-weight: 800; cursor: pointer; }
+.t-tools details > :not(summary) { margin-top: .6rem; }
+.t-tools .t-say textarea { flex: 1; min-width: 0; }
+.t-repeat { flex-basis: 100%; padding: .7rem; border-radius: 10px; background: var(--gold-soft); }
+.t-drawer { overflow-y: auto; }
+.t-drawer > * { flex-shrink: 0; }
+.t-history { display: flex; flex-direction: column; gap: .5rem; }
+.t-history .t-transcript { max-height: 45vh; }
+.t-history .t-line { flex-wrap: wrap; }
+.t-history .t-line time { flex-basis: 100%; }
+.t-history small { display: block; }
+.s-draft { color: #83541b; }
+.t-command-list { display: flex; flex-direction: column; gap: .3rem; max-height: 50vh; overflow-y: auto; margin: .6rem 0; }
+.t-command-list button { text-align: left; }
+.t-drawer .avatar-editor { color: var(--ink); }
+.t-drawer .control-label, .t-drawer .character-voice p { text-shadow: none; }
+.t-drawer .character-voice select { color: var(--ink); background: #fff; }

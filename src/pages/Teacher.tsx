@@ -1,7 +1,7 @@
 // The teacher's page: open the class, start an activity for everyone with one click, and watch every table talk.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GameInfo, Kind, Level, Line, StartOptions, TeacherStatus, TeacherStudent, TeacherTable } from '../../shared/protocol';
-import { levelOf } from '../../shared/levels';
+import type { GameInfo, Kind, Level, Line, StartOptions, TeacherStatus, TeacherTable } from '../../shared/protocol';
+import { StudentDrawer, LessonControls, CommandPalette } from '../components/TeacherTools';
 import Face from '../components/Face';
 import './Teacher.css';
 
@@ -18,7 +18,7 @@ const QUESTION_GAMES = ['speedchat', 'pingpong', 'hotpotato', 'trail'];
 const clock = (ms: number): string => { const seconds = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; };
 const ago = (ts: number, now: number): string => { if (!ts) return 'nothing yet'; const seconds = Math.max(0, Math.floor((now - ts) / 1000)); return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)} min ago`; };
 
-type Api = <T = TeacherStatus>(path: string, body?: unknown) => Promise<T>;
+export type Api = <T = TeacherStatus>(path: string, body?: unknown) => Promise<T>;
 
 function SignIn({ onToken }: { onToken: (token: string, notice: string) => void }) {
   const [password, setPassword] = useState('');
@@ -123,7 +123,7 @@ function Starter({ status, api, flash }: { status: TeacherStatus; api: Api; flas
 }
 
 function TableDrawer({ table, api, onClose, flash }: { table: TeacherTable; api: Api; onClose: () => void; flash: (text: string) => void }) {
-  const [lines, setLines] = useState<(Line & { status: string; note: string | null; flag: string | null })[]>([]);
+  const [lines, setLines] = useState<(Line & { status: string; note: string | null; flag: string | null; starred: boolean })[]>([]);
   const [text, setText] = useState('');
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -153,6 +153,7 @@ function TableDrawer({ table, api, onClose, flash }: { table: TeacherTable; api:
             {line.status === 'removed' && <em> — removed</em>}
             {line.note && <small> {line.note}</small>}
           </span>
+          {line.status === 'ok' && line.from !== 'sys' && line.from !== 'teacher' && <button type="button" title="Star message (+5 XP)" disabled={line.starred} onClick={() => void api('chat-star', { id: line.id }).catch(cause => flash(cause.message))}>{line.starred ? '★' : '☆'}</button>}
           {line.status === 'ok' && line.from !== 'sys' && line.from !== 'teacher' && <button type="button" title="Remove this message" onClick={() => void api('remove', { line: line.id }).catch(() => flash('Could not remove it.'))}>🗑</button>}
         </div>)}
         {!lines.length && <p className="muted">Nobody has written yet.</p>}
@@ -163,26 +164,6 @@ function TableDrawer({ table, api, onClose, flash }: { table: TeacherTable; api:
       </form>
       <button type="button" className="btn btn-sm btn-danger" onClick={() => { void api('close-table', { id: table.id }); onClose(); }}>End this table’s game</button>
     </aside>
-  </div>;
-}
-
-function StudentMenu({ student, api, onClose, flash }: { student: TeacherStudent; api: Api; onClose: () => void; flash: (text: string) => void }) {
-  const [text, setText] = useState('');
-  const send = async () => { if (!text.trim()) return; try { await api('say', { to: 'student', id: student.key, text }); flash(`Sent to ${student.name}.`); onClose(); } catch (cause) { flash(cause instanceof Error ? cause.message : 'Not sent.'); } };
-  return <div className="overlay" onClick={onClose}>
-    <div className="card modal" onClick={event => event.stopPropagation()}>
-      <h2><span className="face-lg"><Face player={student.look} name={student.name} /></span> {student.name}</h2>
-      <p className="muted">{student.real} · Level {levelOf(student.xp).level} · {student.messages} messages, {student.words} words, ⭐ {student.stars} this lesson{student.blocked ? ` · ${student.blocked} blocked` : ''}</p>
-      <form className="t-say" onSubmit={event => { event.preventDefault(); void send(); }}>
-        <input className="input-field" autoFocus value={text} maxLength={300} onChange={event => setText(event.target.value)} placeholder={`A private message for ${student.name}…`} />
-        <button className="btn btn-primary" type="submit" disabled={!text.trim()}>Send</button>
-      </form>
-      <div className="modal-actions">
-        <button type="button" className="btn" onClick={() => void api('mute', { key: student.key, on: !student.muted })}>{student.muted ? '💬 Let them chat again' : '🤐 Pause their chat'}</button>
-        <button type="button" className="btn" onClick={() => void api('sound', { key: student.key, off: !student.soundOff })}>{student.soundOff ? '🔊 Give sound back' : '🔇 Turn their sound off'}</button>
-        <button type="button" className="btn" onClick={onClose}>Close</button>
-      </div>
-    </div>
   </div>;
 }
 
@@ -270,6 +251,7 @@ export default function Teacher() {
         <label className="t-toggle">Level <select value={status.level} onChange={event => void api('level', { level: event.target.value as Level })}><option>A1</option><option>A2</option><option>B1</option></select></label>
       </> : <span className="muted">The class is closed.</span>}
       <span className="t-space" />
+      <CommandPalette status={status} api={api} flash={flash} onStudent={setOpenStudent} onTable={setOpenTable} onReport={() => setReport(true)} />
       {!status.ai && <span className="t-warn" title="Set OPENAI_API_KEY for AI moderation and grammar hints. The word filter still checks every message.">⚠ No AI checks</span>}
       {status.open && <button type="button" className="btn btn-sm" onClick={() => setReport(true)}>📋 Report</button>}
       <button type="button" className={`btn ${status.open ? 'btn-danger' : 'btn-go'}`} onClick={() => { if (!status.open || window.confirm('Close the class? Everyone is sent out.')) void api('class', { open: !status.open }); }}>{status.open ? 'Close class' : 'Open class'}</button>
@@ -277,6 +259,7 @@ export default function Teacher() {
     </header>
     {message && <div className="t-flash" role="status">{message}</div>}
 
+    <LessonControls key={status.activeClass} status={status} api={api} flash={flash} />
     {!status.open ? <div className="t-closed card">
       <h1>Ready when you are</h1>
       <ol>
@@ -342,7 +325,7 @@ export default function Teacher() {
         {status.students.map(item => <button key={item.key} type="button" className={`t-student${item.online ? '' : ' away'}`} onClick={() => setOpenStudent(item.key)}>
           <Face player={item.look} name={item.name} />
           <span className="t-student-name">{item.name}{status.secretNames ? <small> {item.real}</small> : ''}{item.muted ? ' 🤐' : ''}{item.soundOff ? ' 🔇' : ''}</span>
-          <span className="t-student-stats" title="Messages this lesson, and stars">{item.messages} 💬 · ⭐{item.stars}</span>
+          <span className="t-student-stats" title="Messages this lesson, and stars">{item.messages} 💬 · ⭐{item.stars} · ↗{item.tabSwitches}</span>
           {item.online && !item.table && <span className="t-chip">free</span>}
         </button>)}
         {!status.students.length && <p className="muted">Nobody has joined yet.</p>}
@@ -350,7 +333,7 @@ export default function Teacher() {
     </div>}
 
     {table && <TableDrawer table={table} api={api} flash={flash} onClose={() => setOpenTable(null)} />}
-    {student && <StudentMenu student={student} api={api} flash={flash} onClose={() => setOpenStudent(null)} />}
+    {student && <StudentDrawer key={`${status.activeClass}:${student.key}`} student={student} api={api} flash={flash} onClose={() => setOpenStudent(null)} />}
     {report && <Report api={api} onClose={() => setReport(false)} />}
   </div>;
 }

@@ -1,3 +1,4 @@
+import { StudentHelp, PrivateChat } from '../components/StudentTools';
 // The student's whole game: the lounge (choose a game, or wait for the teacher) and the table (a board, one line that
 // says what to do now, and the chat).
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
@@ -70,21 +71,6 @@ function Looks({ me, room, onClose }: { me: Me; room: Room; onClose: () => void 
         </div>
       </div>)}
       <button type="button" className="btn btn-primary" onClick={onClose}>Done</button>
-    </div>
-  </div>;
-}
-
-function Help({ room, onClose }: { room: Room; onClose: () => void }) {
-  const [note, setNote] = useState('');
-  return <div className="overlay" onClick={onClose}>
-    <div className="card modal" onClick={event => event.stopPropagation()} role="dialog" aria-label="Ask your teacher">
-      <h2>🙋 Ask your teacher</h2>
-      <p className="muted">Write what you need. You can write in any language here.</p>
-      <textarea className="input-field" rows={3} maxLength={300} autoFocus value={note} onChange={event => setNote(event.target.value)} placeholder="I don’t understand…" />
-      <div className="modal-actions">
-        <button type="button" className="btn" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn btn-go" onClick={() => { room.help(note); onClose(); }}>Call my teacher</button>
-      </div>
     </div>
   </div>;
 }
@@ -278,11 +264,12 @@ function Playing({ room, entry, onExit }: { room: Room; entry: Entry; onExit: ()
   const state = useSyncExternalStore(room.subscribe, room.snapshot);
   const [looks, setLooks] = useState(false);
   const [help, setHelp] = useState(false);
+  const [privateChat, setPrivateChat] = useState(false);
   const [burst, setBurst] = useState<{ id: number; kind: string } | null>(null);
 
   // Sound: classmates' messages read aloud in their voice, and a chime for stars and turns.
   const key = state.me?.key;
-  const audio = useMemo(() => (key ? new GameAudio(entry.token, key) : null), [entry.token, key]);
+  const audio = useMemo(() => (key ? new GameAudio(entry.token, key, undefined, id => { room.send({ t: 'played', id }); }) : null), [entry.token, key, room]);
   const [sound, setSound] = useState<SoundState | null>(null);
   useEffect(() => { if (!audio) return; const off = audio.subscribe(setSound); return () => { off(); audio.dispose(); }; }, [audio]);
   useEffect(() => { audio?.setLocked(state.soundOff); }, [audio, state.soundOff]);
@@ -325,6 +312,7 @@ function Playing({ room, entry, onExit }: { room: Room; entry: Entry; onExit: ()
       <span className="topbar-space" />
       {audio && <button type="button" className="btn btn-sm" disabled={state.soundOff} title={state.soundOff ? 'Your teacher turned the sound off' : 'Sound'}
         onClick={() => (sound?.needsInteraction ? unlockSound() : audio.setMuted(!sound?.muted))}>{state.soundOff ? '🔒' : sound?.muted ? '🔇' : '🔊'}<span className="hide-small"> {state.soundOff || sound?.muted ? 'Sound off' : sound?.needsInteraction ? 'Tap for sound' : 'Sound on'}</span></button>}
+      <button type="button" className="btn btn-sm" onClick={() => setPrivateChat(true)}>👩‍🏫 Teacher chat</button>
       <button type="button" className="btn btn-sm" onClick={() => setHelp(true)}>🙋<span className="hide-small"> Help</span></button>
     </header>
     {state.status === 'reconnecting' && <div className="offline" role="alert">📡 Connecting again… your game is safe.</div>}
@@ -341,6 +329,7 @@ function Playing({ room, entry, onExit }: { room: Room; entry: Entry; onExit: ()
     </div>
     {burst && burstIcon && <div key={burst.id} className={`burst ${burst.kind}`} aria-hidden="true">{burstIcon}</div>}
     {looks && <Looks me={me} room={room} onClose={() => setLooks(false)} />}
-    {help && <Help room={room} onClose={() => setHelp(false)} />}
+    {privateChat && <PrivateChat room={room} onClose={() => setPrivateChat(false)} />}
+    {help && <StudentHelp room={room} onClose={() => setHelp(false)} />}
   </div>;
 }

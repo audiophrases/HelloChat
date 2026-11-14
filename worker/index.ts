@@ -21,6 +21,7 @@ export interface Env {
     OPENAI_BASE_URL?: string; // tests only
     OPENAI_GRAMMAR_MODEL?: string;
     OPENAI_GRAMMAR_GATE?: string;
+    OPENAI_PARTICIPATION?: string;
     // Set only on the teacher's laptop (npm run classroom): its address on the school network, and the online
     // HelloChat where students sign in.
     LAN_URL?: string;
@@ -94,6 +95,17 @@ function teacherAction(path: string, method: string, body: any): TeacherAction |
     if (method !== 'POST') return null;
     const text = (value: unknown, max: number): value is string => typeof value === 'string' && value.length <= max;
     switch (path) {
+        case '/api/teacher/words': return Array.isArray(body?.words) && body.words.length <= 50 && body.words.every((word: unknown) => text(word, 60)) ? { kind: 'words', words: body.words } : null;
+        case '/api/teacher/unblock': return text(body?.key, 100) ? { kind: 'unblock', key: body.key } : null;
+        case '/api/teacher/allow-repeat': return text(body?.key, 200) && text(body?.words, 60) ? { kind: 'allowRepeat', key: body.key, words: body.words } : null;
+        case '/api/teacher/chat-star': return text(body?.id, 64) ? { kind: 'chatStar', id: body.id } : null;
+        case '/api/teacher/student': {
+            const look = sanitizeAvatar(body?.look);
+            return text(body?.key, 128) && text(body?.name, 60) && look ? { kind: 'student', key: body.key, name: body.name, look } : null;
+        }
+        case '/api/teacher/classroom': return body?.name !== undefined
+            ? text(body.name, 60) ? { kind: 'classroom', id: crypto.randomUUID(), name: body.name } : null
+            : text(body?.id, 64) ? { kind: 'classroom', id: body.id } : null;
         case '/api/teacher/class': return typeof body?.open === 'boolean' ? { kind: 'open', open: body.open } : null;
         case '/api/teacher/start': {
             if (!text(body?.game, 40) || !gameById(body.game)) return null;
@@ -212,6 +224,18 @@ async function handle(request: Request, env: Env): Promise<Response> {
         return json({ token, notice });
     }
     const teacherToken = request.headers.get('x-teacher-session') || '';
+    if (path === '/api/teacher/history' && get) {
+        const result = await room(env).history(teacherToken, url.searchParams.get('key') || '', url.searchParams.get('q') || '', Number(url.searchParams.get('before')) || 0);
+        return 'error' in result ? json({ error: result.error }, result.status) : json(result);
+    }
+    if (path === '/api/teacher/private' && get) {
+        const result = await room(env).privateHistory(teacherToken, url.searchParams.get('key') || '');
+        return 'error' in result ? json({ error: result.error }, result.status) : json(result);
+    }
+    if (path === '/api/teacher/heard' && get) {
+        const result = await room(env).heard(teacherToken, url.searchParams.get('q') || '');
+        return 'error' in result ? json({ error: result.error }, result.status) : json(result);
+    }
     if (path === '/api/teacher/transcript' && get) {
         const result = await room(env).transcript(teacherToken, url.searchParams.get('id') || '');
         return 'error' in result ? json({ error: result.error }, result.status) : json(result);

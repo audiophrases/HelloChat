@@ -69,6 +69,18 @@ A student who arrives late is seated with others who wait, or joins the smallest
 
 Games give stars for communicating (an answer, a follow-up question, a reason, a found difference). Every star is one experience point, kept for good. Level 1 needs 8 stars, each level 4 more than the last. Levels open looks for the chat only: 1 a name colour, 2 a badge, 3 a bubble colour, 4 more reactions, 5 a photo frame. Students open them by clicking their level in the top bar.
 
+Teachers can also star an individual chat message for +5 XP, once per message. With AI enabled, useful, varied contributions can earn +1 XP (at most eight awards and twelve checks per student per lesson, at least 45 seconds apart). Set `OPENAI_PARTICIPATION=0` to disable participation judging independently.
+
+## Teacher tools
+
+- **Blocked words**: lesson-specific words and phrases, including disguised spellings. Blocking a phrase removes matching chat messages already posted. Repeated phrases from several students prompt an offer to block or leave them alone; ordinary task vocabulary is excluded. A new lesson clears the active list and offers to reuse the previous one.
+- **Student drawer**: click a student to pause chat, silence sound, edit their name or character, read their private teacher thread, and search conversations and submitted attempts across lessons. Browser-stopped drafts are labelled separately; unsent typing is not recorded. Use **Search message history** for the whole class, with older results available through pagination.
+- **Teacher chat**: students can reply privately from the top bar, including while in the lounge. Help requests remain available in any language even when chat is paused.
+- **Heard something?**: search device-reported playback from the last 15 minutes and silence the device. Tab-switch counts report when the page becomes hidden, not what was opened elsewhere.
+- **Commands**: Ctrl+K (Cmd+K on Mac) finds students, tables, and common controls.
+- **Saved classes**: close the class, then switch or create a named class. Progress, student edits, histories and settings are saved automatically on switching. One class can be open at a time; these saves do not resume a live round.
+- **Free language hint**: under Help, students get one AI sentence starter per lesson. Failed requests preserve the allowance. Hints require a successful safety check and never replace the teacher-help button.
+
 ## Chat checks
 
 - **English only**: every word is checked against a dictionary in the browser (American suggestions, British spellings accepted, classmates' names and the words on the board allowed). A wrong word shows suggestions to tap. On the teacher's laptop the server checks again.
@@ -112,7 +124,7 @@ Add the new address (`https://hello-chat.<account>.workers.dev`, or a custom dom
 
 ```powershell
 npm test                          # 80+ tests: bots play every game to its end, with every table size and level
-npm run test:live                 # a whole lesson against the real Worker: PIN, free play, rounds, reconnects
+npm run test:live                 # a real local Worker lesson, teacher controls and AI flows (local mock; no API spend)
 node scripts/browser-check.mjs    # real Chrome tabs play every game; pictures land in .wrangler/shots
 npm run lint
 ```
@@ -123,7 +135,7 @@ A game is one object (`worker/games/types.ts`): `create`, `chat` (what a message
 
 ## Current limits
 
-- One room: open it for one class at a time.
+- Up to 30 saved classes; open one at a time.
 - Without an OpenAI key, messages are checked by the dictionary and the word filter only; the teacher can take any message down.
 - Games judge form, not truth: a sentence with the right word and length counts. Classmates judge the rest (Tic-Tac-Talk, Name 10!) and the teacher reads everything.
 - Browser controls cannot stop screenshots or translation tools outside the page.

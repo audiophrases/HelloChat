@@ -97,6 +97,9 @@ export type LoungeInfo = {
 export type Me = { key: string; name: string; look: Look; style: Style; xp: number };
 
 export type ServerMessage =
+    | { t: 'controls'; blocked: { key: string; words: string }[]; hintUsed: boolean }
+    | { t: 'private'; lines: PrivateLine[] }
+    | { t: 'languageHint'; text: string; used: boolean }
     | { t: 'welcome'; me: Me; names: string[]; soundOff: boolean; muted: boolean; hints: boolean }
     | { t: 'lounge'; lounge: LoungeInfo }
     | { t: 'table'; table: TableInfo | null; why?: string }
@@ -119,6 +122,11 @@ export type ServerMessage =
     | { t: 'bye'; why: 'replaced' | 'closed' };   // sent just before the server closes the connection
 
 export type ClientMessage =
+    | { t: 'attempt'; text: string; reason: string }
+    | { t: 'tab'; hidden: boolean }
+    | { t: 'played'; id: string }
+    | { t: 'private'; text: string; cid: string }
+    | { t: 'languageHint'; text: string }
     | { t: 'chat'; text: string; cid: string; was?: string; better?: string }
     | { t: 'check'; id: string; text: string }
     | { t: 'act'; act: string; data?: unknown }
@@ -141,6 +149,7 @@ export type TeacherTable = {
 };
 
 export type TeacherStudent = {
+    tabSwitches: number;
     key: string; name: string; real: string; look: Look; online: boolean; table: string | null;
     messages: number; words: number; stars: number; xp: number; muted: boolean; soundOff: boolean; lastTs: number; blocked: number;
 };
@@ -150,6 +159,8 @@ export type TeacherAlert = { id: string; kind: 'help' | 'incident' | 'quiet'; ke
 export type TeacherReport = { id: string; ts: number; quest: string; names: string[]; text: string; starred: boolean; table: string };
 
 export type TeacherStatus = {
+    blocked: import('./blockedWords').BlockedStatus;
+    classes: { id: string; name: string }[]; activeClass: string;
     open: boolean; pin: string | null; free: boolean; soundOff: boolean; secretNames: boolean; level: Level; ai: boolean;
     games: GameInfo[]; topics: { id: string; title: string; emoji: string }[];
     session: { id: string; game: string; title: string; icon: string; round: number; rounds: number; ends: number | null; started: number } | null;
@@ -160,3 +171,7 @@ export type TeacherStatus = {
 };
 
 export type StartOptions = { game: string; level: Level; size: number; rounds: number; minutes: number; topic: string };
+
+export type PrivateLine = { id: string; ts: number; from: 'student' | 'teacher'; text: string };
+export type HistoryLine = Line & { status: string; note: string | null; flag: string | null; table: string; lesson: number; starred: boolean };
+export type HistoryPage = { lines: HistoryLine[]; next: number | null };

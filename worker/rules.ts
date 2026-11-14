@@ -31,10 +31,10 @@ const blockedWords = new Set(['fuck', 'shit', 'bitch', 'cunt']);
 const blockedPhrases = [/\bnobody likes you\b/i, /\bkill yourself\b/i, /\byou are stupid\b/i];
 export const CHAT_MAX = 240;
 
-export function chatProblem(value: unknown): string | null {
+export function chatProblem(value: unknown, max = CHAT_MAX): string | null {
     if (typeof value !== 'string') return 'Enter a text message.';
     const text = value.trim();
-    if (!text || text.length > CHAT_MAX) return `Messages must be 1–${CHAT_MAX} characters.`;
+    if (!text || text.length > max) return `Messages must be 1–${max} characters.`;
     if (Array.from(text).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) {
         return 'Control characters are not allowed.';
     }

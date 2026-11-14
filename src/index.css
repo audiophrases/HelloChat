@@ -83,3 +83,4 @@ h1, h2, h3 { font-family: var(--display); line-height: 1.1; }
 /* A teacher's correction: what was wrong struck through in red, what is right in green. */
 .diff-del { color: #b91c1c; text-decoration: line-through; background: rgba(254, 226, 226, .6); padding: 0 3px; border-radius: 3px; }
 .diff-ins { color: #15803d; font-weight: 700; background: rgba(220, 252, 231, .8); padding: 0 3px; border-radius: 3px; }
+.t-private { max-height: 30vh; min-height: 4rem; overflow-y: auto; background: #f7f8fd; border-radius: 12px; padding: .7rem; } .t-private p { margin: .35rem 0; overflow-wrap: anywhere; }

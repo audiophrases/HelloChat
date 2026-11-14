@@ -11,7 +11,7 @@ type SoundJob = { kind: 'speech'; id: string } | { kind: 'goal'; path: string };
 export type SoundDependencies = {
   speech: (id: string, signal: AbortSignal) => Promise<ArrayBuffer>;
   effect: (path: string, signal: AbortSignal) => Promise<ArrayBuffer>;
-  play: (bytes: ArrayBuffer, signal: AbortSignal, volume: number) => Promise<void>;
+  play: (bytes: ArrayBuffer, signal: AbortSignal, volume: number, onStart?: () => void) => Promise<void>;
 };
 
 const muteKey = (studentKey: string) => `hellochat.sound-muted.v1:${studentKey}`;
@@ -43,7 +43,7 @@ export function unlockSound(): void {
   } catch { /* audio is optional */ }
 }
 
-async function playBytes(bytes: ArrayBuffer, signal: AbortSignal, volume: number): Promise<void> {
+async function playBytes(bytes: ArrayBuffer, signal: AbortSignal, volume: number, onStart?: () => void): Promise<void> {
   if (signal.aborted) return;
   const audio = soundContext();
   if (audio.state !== 'running') throw new NeedsInteraction();
@@ -72,7 +72,7 @@ async function playBytes(bytes: ArrayBuffer, signal: AbortSignal, volume: number
     signal.addEventListener('abort', stop, { once: true });
     source.onended = finish;
     timer = setTimeout(stop, Math.min(120_000, buffer.duration * 1000 + 2000));
-    try { source.start(); }
+    try { source.start(); onStart?.(); }
     catch (cause) { stop(); reject(cause); }
   });
 }
@@ -118,14 +118,16 @@ export class GameAudio {
   private clip = 0;
   private dependencies: SoundDependencies;
   private studentKey: string;
+  private onPlayed?: (id: string) => void;
   private resume = () => {
     if (this.disposed || this.silent || !this.state.needsInteraction) return;
     this.update({ needsInteraction: false });
     void this.drain();
   };
 
-  constructor(token: string, studentKey: string, dependencies?: SoundDependencies) {
+  constructor(token: string, studentKey: string, dependencies?: SoundDependencies, onPlayed?: (id: string) => void) {
     this.studentKey = studentKey;
+    this.onPlayed = onPlayed;
     this.state = { muted: soundIsMuted(studentKey), locked: false, messageId: null, needsInteraction: false, error: '' };
     this.dependencies = dependencies ?? {
       speech: (id, signal) => fetchAudio('/api/room/speech', signal, token, { id }),
@@ -268,7 +270,7 @@ export class GameAudio {
             ? this.dependencies.speech(job.id, controller.signal)
             : this.dependencies.effect(job.path, controller.signal));
           if (!controller.signal.aborted && generation === this.generation) {
-            await this.dependencies.play(bytes, controller.signal, job.kind === 'goal' ? 0.5 : 1);
+            await this.dependencies.play(bytes, controller.signal, job.kind === 'goal' ? 0.5 : 1, () => { if (job.kind === 'speech') this.onPlayed?.(job.id); });
           }
         } catch (cause) {
           if (!controller.signal.aborted && generation === this.generation) {

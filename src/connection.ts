@@ -1,11 +1,15 @@
 // One student's connection to the class. It keeps what the server last said (who I am, my table, the lounge), tells
 // the page when that changes, and rejoins by itself after a dropped connection.
-import type { ClientMessage, Line, LoungeInfo, Me, ServerMessage, Style, TableInfo } from '../shared/protocol';
+import type { ClientMessage, PrivateLine, Line, LoungeInfo, Me, ServerMessage, Style, TableInfo } from '../shared/protocol';
 import type { Look } from '../shared/protocol';
 import { messageId } from './utils/messageId';
 
 export type Notice = { id: string; level: 'info' | 'warning' | 'teacher'; text: string };
 export type RoomState = {
+  blocked: { key: string; words: string }[];
+  privateLines: PrivateLine[];
+  hintUsed: boolean;
+  languageHint: string;
   status: 'connecting' | 'online' | 'reconnecting' | 'stopped';
   stopped?: string;                 // why the page cannot continue: the class closed, another window opened
   me: Me | null;
@@ -35,7 +39,7 @@ const HINT_WAIT_MS = 3500;
 class Refused extends Error {}
 
 export class Room {
-  state: RoomState = { status: 'connecting', me: null, names: [], hints: false, lounge: null, table: null, arrival: null, leftWhy: null, typing: {}, notices: [], soundOff: false, muted: false, gain: null };
+  state: RoomState = { blocked: [], privateLines: [], hintUsed: false, languageHint: '', status: 'connecting', me: null, names: [], hints: false, lounge: null, table: null, arrival: null, leftWhy: null, typing: {}, notices: [], soundOff: false, muted: false, gain: null };
   private pin: string;
   private token: string;
   private avatar: Look | null;
@@ -74,12 +78,12 @@ export class Room {
   }
 
   // A chat message: resolves when the server took it or refused it.
-  chat(text: string, hint?: { was?: string; better?: string }): Promise<Sent> {
+  chat(text: string, hint?: { was?: string; better?: string }, privateMessage = false): Promise<Sent> {
     const cid = messageId();
     return new Promise(resolve => {
       const timer = window.setTimeout(() => { this.pending.delete(cid); resolve({ ok: false, text: 'No answer from the class. Try again.', keep: true }); }, 12000);
       this.pending.set(cid, result => { window.clearTimeout(timer); resolve(result); });
-      if (!this.send({ t: 'chat', text, cid, ...hint })) { window.clearTimeout(timer); this.pending.delete(cid); resolve({ ok: false, text: 'You are offline. Wait a moment…', keep: true }); }
+      if (!this.send(privateMessage ? { t: 'private', text, cid } : { t: 'chat', text, cid, ...hint })) { window.clearTimeout(timer); this.pending.delete(cid); resolve({ ok: false, text: 'You are offline. Wait a moment…', keep: true }); }
     });
   }
 
@@ -99,6 +103,8 @@ export class Room {
   leave(): void { this.send({ t: 'leave' }); }
   again(): void { this.send({ t: 'again' }); }
   react(line: string, emoji: string): void { this.send({ t: 'react', line, emoji }); }
+  attempt(text: string, reason: string): void { this.send({ t: 'attempt', text, reason }); }
+  askHint(text: string): boolean { this.set({ languageHint: '' }); return this.send({ t: 'languageHint', text }); }
   help(note: string): void { this.send({ t: 'help', note }); }
   style(style: Style): void { this.send({ t: 'style', style }); }
   private lastTyping = 0;
@@ -116,7 +122,9 @@ export class Room {
   }
 
   private wake = (): void => {
-    if (this.done || document.visibilityState === 'hidden') return;
+    if (this.done) return;
+    this.send({ t: 'tab', hidden: document.visibilityState === 'hidden' });
+    if (document.visibilityState === 'hidden') return;
     if (!this.ws || this.ws.readyState > WebSocket.OPEN) { window.clearTimeout(this.retryTimer); void this.open(); }
     else this.ping();
   };
@@ -204,6 +212,9 @@ export class Room {
 
   private receive(message: ServerMessage): void {
     switch (message.t) {
+      case 'controls': this.set({ blocked: message.blocked, hintUsed: message.hintUsed }); break;
+      case 'private': this.set({ privateLines: message.lines }); break;
+      case 'languageHint': this.set({ languageHint: message.text, hintUsed: message.used }); break;
       case 'welcome': this.set({ status: 'online', me: message.me, names: message.names, soundOff: message.soundOff, muted: message.muted, hints: message.hints }); break;
       case 'me': this.set({ me: message.me }); break;
       case 'names': this.set({ names: message.names }); break;

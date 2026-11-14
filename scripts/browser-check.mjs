@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import assert from 'node:assert/strict';
 
 const root = path.join(import.meta.dirname, '..');
 const wrangler = path.join(root, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -49,7 +50,7 @@ class Tab {
         await tab.cmd('Emulation.setFocusEmulationEnabled', { enabled: true });
         return tab;
     }
-    cmd(method, params = {}) { const id = ++this.id; return new Promise(resolve => { this.waiting.set(id, resolve); this.ws.send(JSON.stringify({ id, method, params })); }); }
+    cmd(method, params = {}) { const id = ++this.id; return new Promise((resolve, reject) => { const timer = setTimeout(() => { this.waiting.delete(id); reject(new Error(`Chrome timed out: ${method}`)); }, 20000); this.waiting.set(id, result => { clearTimeout(timer); resolve(result); }); this.ws.send(JSON.stringify({ id, method, params })); }); }
     async run(expression) {
         const result = await this.cmd('Runtime.evaluate', { expression: `(async () => { ${expression} })()`, awaitPromise: true, returnByValue: true });
         if (result.result?.exceptionDetails) throw new Error(result.result.exceptionDetails.exception?.description ?? 'page error');
@@ -68,8 +69,9 @@ class Tab {
         await sleep(900);
     }
     async shot(name) {
+        if (process.env.SKIP_SHOTS === '1') return;
         await sleep(350);
-        const { result } = await this.cmd('Page.captureScreenshot', { format: 'png' });
+        const { result } = await this.cmd('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
         fs.writeFileSync(path.join(shots, `${name}.png`), Buffer.from(result.data, 'base64'));
     }
 }
@@ -125,6 +127,36 @@ async function main() {
     await teacher.until(`document.querySelector('.t-transcript .t-line')`, 'the transcript');
     await teacher.shot('09-teacher-table');
     await teacher.click('✕ Close');
+
+    // The finer teacher controls, exercised through the rendered UI.
+    await teacher.run(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));`);
+    await teacher.until(`document.querySelector('[aria-label="Search commands"]')`, 'Ctrl+K commands');
+    await teacher.click('Student: Ana');
+    await teacher.until(`document.querySelector('[aria-label="Private message"]')`, 'student drawer');
+    await teacher.run(`const box = document.querySelector('[aria-label="Private message"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(box, 'How are you getting on?'); box.dispatchEvent(new Event('input', { bubbles: true }));`);
+    await sleep(100); await teacher.click('Send');
+    await ana.click('Teacher chat');
+    await ana.until(`document.body.innerText.includes('How are you getting on?')`, 'private teacher message');
+    await ana.run(`const box = document.querySelector('[aria-label="Message to your teacher"]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'I understand the task now'); box.dispatchEvent(new Event('input', { bubbles: true }));`);
+    await sleep(100); await ana.click('Send privately');
+    await teacher.until(`document.body.innerText.includes('I understand the task now')`, 'private student reply');
+    await teacher.shot('09-student-drawer'); await ana.shot('09-private-chat');
+    await ana.click('Close');
+    await teacher.click('Edit name or character');
+    await teacher.until(`document.querySelector('.avatar-editor')`, 'character editor');
+    await teacher.shot('09-character-editor');
+    await teacher.click('Cancel'); await teacher.run(`document.querySelector('.t-drawer header button').click();`);
+    await teacher.run(`document.getElementById('lesson-words').open = true; const box = document.querySelector('[aria-label="Words or phrases to block"]'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'andrei'); box.dispatchEvent(new Event('input', { bubbles: true }));`);
+    await sleep(100); await teacher.run(`document.querySelector('#lesson-words form button').click();`);
+    await teacher.until(`document.getElementById('lesson-words').innerText.includes('Allow again')`, 'lesson word saved');
+    await ana.say('fr33 4ndr3i');
+    await ana.until(`document.body.innerText.includes('blocked those words')`, 'browser disguise detection');
+    await teacher.run(`document.getElementById('message-history').open = true;`);
+    await teacher.until(`document.getElementById('message-history').innerText.includes('fr33 4ndr3i')`, 'blocked draft in searchable history');
+    await teacher.shot('09-lesson-controls');
+    assert.equal(await teacher.run(`return document.documentElement.scrollWidth <= innerWidth;`), true, 'teacher controls fit the screen');
+    await teacher.run(`document.getElementById('message-history').open = false; document.getElementById('lesson-words').open = false;`);
+    console.log('  ✓ Commands, student drawer, character editor, private replies, lesson words and draft history');
 
     // Every game, as a class activity, so each board is seen with real players.
     const status = await (await fetch(`${origin}/api/teacher/status`, { headers: { 'x-teacher-session': token } })).json();

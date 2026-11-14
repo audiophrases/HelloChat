@@ -2,6 +2,7 @@
 // the ideas under it start the sentence, and the box checks the English before it is sent.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Line, Member, TableInfo } from '../../shared/protocol';
+import { blockedIn } from '../../shared/blockedWords';
 import { BUBBLES, FRAMES, NAME_COLOURS, levelOf, reactionsFor } from '../../shared/levels';
 import type { GrammarHint, Room } from '../connection';
 import { loadChecker } from '../spellingData';
@@ -95,9 +96,10 @@ export default function Chat({ room, table, me, xp, names, typing, muted, audio,
     const value = text.trim();
     if (!value || busy || muted) return;
     setProblem(''); setHint(null);
-    if (value.includes('…')) { setProblem('Finish the sentence: write your own words where you see “…”.'); return; }
+    if (value.includes('…')) { room.attempt(value, 'Unfinished sentence starter'); setProblem('Finish the sentence: write your own words where you see “…”.'); return; }
+    if (blockedIn(value, room.state.blocked, checker ? word => checker(word, allowed).length === 0 : undefined)) { room.attempt(value, 'Lesson blocked words'); setProblem('Your teacher has blocked those words for this lesson. Try another idea.'); return; }
     const misspelt = checker ? checker(value, allowed) : [];
-    if (misspelt.length) { setWrong(misspelt); return; }
+    if (misspelt.length) { room.attempt(value, `English check: ${misspelt.map(word => word.word).join(', ')}`); setWrong(misspelt); return; }
     setWrong([]);
     // A grammar hint, when the class has them. It only ever advises.
     if (value.split(/\s+/).length >= 4 && declined.current < 3) {

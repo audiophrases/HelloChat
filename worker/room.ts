@@ -1,6 +1,12 @@
 // The class, live. One Durable Object holds everyone who is connected, the tables they sit at, the game each table
 // plays and all saved progress (SQLite). A student is always in one of three places: at a table, waiting for a
 // partner, or in the lounge choosing a game.
+import { BlockedWords } from './blockedWords.ts';
+import { blockedIn, repeated, taskWordSet, type BlockedStatus } from '../shared/blockedWords.ts';
+import { Participation, participationDecision } from './participation.ts';
+import { Classrooms } from './classrooms.ts';
+import { languageHint } from './languageHint.ts';
+import type { HistoryPage, PrivateLine } from '../shared/protocol.ts';
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from './index.ts';
 import type { PinPlayStudent } from './pinplay.ts';
@@ -52,6 +58,12 @@ type Session = {
 };
 
 export type TeacherAction =
+    | { kind: 'words'; words: string[] }
+    | { kind: 'unblock'; key: string }
+    | { kind: 'allowRepeat'; key: string; words: string }
+    | { kind: 'chatStar'; id: string }
+    | { kind: 'student'; key: string; name: string; look: Look }
+    | { kind: 'classroom'; id: string; name?: string }
     | { kind: 'status' }
     | { kind: 'open'; open: boolean }
     | { kind: 'start'; options: StartOptions }
@@ -70,6 +82,10 @@ type Failure = { error: string; status: number };
 
 export class ChatRoom extends DurableObject<Env> {
     private sql: SqlStorage;
+    private blockedWords: BlockedWords;
+    private participation: Participation;
+    private classrooms: Classrooms;
+    private telemetry = new Map<string, number>();
     private tables = new Map<string, Table>();
     private seatOf = new Map<string, string>();        // student -> table
     private queue: Record<string, string[]> = {};      // free play: game -> students waiting
@@ -112,6 +128,21 @@ export class ChatRoom extends DurableObject<Env> {
                 id TEXT PRIMARY KEY, ts INTEGER NOT NULL, lesson INTEGER NOT NULL, table_id TEXT NOT NULL, quest TEXT NOT NULL, title TEXT NOT NULL,
                 members TEXT NOT NULL, text TEXT NOT NULL, starred INTEGER NOT NULL DEFAULT 0);
         `);
+        this.sql.exec(`
+            CREATE TABLE IF NOT EXISTS student_controls (student_key TEXT PRIMARY KEY, name TEXT NOT NULL, avatar TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS chat_stars (chat_id TEXT PRIMARY KEY);
+            CREATE TABLE IF NOT EXISTS private_chat (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, lesson INTEGER NOT NULL, student_key TEXT NOT NULL, sender TEXT NOT NULL, text TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS private_student ON private_chat(student_key, ts);
+            CREATE TABLE IF NOT EXISTS language_hints (lesson INTEGER NOT NULL, student_key TEXT NOT NULL, answer TEXT, PRIMARY KEY(lesson, student_key));
+            CREATE TABLE IF NOT EXISTS tab_events (lesson INTEGER NOT NULL, student_key TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0, ts INTEGER NOT NULL, PRIMARY KEY(lesson, student_key));
+            CREATE TABLE IF NOT EXISTS playbacks (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, lesson INTEGER NOT NULL, student_key TEXT NOT NULL, chat_id TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS playbacks_time ON playbacks(ts);
+            CREATE INDEX IF NOT EXISTS chat_student ON chat(student_key, ts);
+        `);
+        this.blockedWords = new BlockedWords(this.sql); this.blockedWords.initialize();
+        this.participation = new Participation(this.sql); this.participation.initialize();
+        this.classrooms = new Classrooms(this.sql, ctx.storage); this.classrooms.initialize();
+        this.sql.exec('DELETE FROM language_hints WHERE answer IS NULL');
         // The room answers 'ping' without waking up, so a page can tell a dead connection from a quiet one.
         ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
         // Whatever was in memory before the room slept comes back from storage.
@@ -239,7 +270,7 @@ export class ChatRoom extends DurableObject<Env> {
     private names(): Map<string, string> {
         if (this.shown) return this.shown;
         const rows = this.sql.exec<{ student_key: string; full_name: string; alias: string | null }>(
-            'SELECT student_key, full_name, alias FROM students WHERE last_seen >= ? ORDER BY first_seen', this.lesson()).toArray();
+            'SELECT s.student_key, COALESCE(c.name, s.full_name) AS full_name, s.alias FROM students s LEFT JOIN student_controls c ON c.student_key = s.student_key WHERE s.last_seen >= ? ORDER BY s.first_seen', this.lesson()).toArray();
         if (this.setting('secret_names') === '1') {
             const taken = new Set(rows.map(row => row.alias).filter(Boolean));
             this.shown = new Map(rows.map(row => {
@@ -257,7 +288,7 @@ export class ChatRoom extends DurableObject<Env> {
 
     private person(key: string): { look: Look; style: Style; xp: number; real: string } {
         const row = this.sql.exec<{ avatar: string | null; style: string | null; xp: number; full_name: string }>(
-            'SELECT avatar, style, xp, full_name FROM students WHERE student_key = ?', key).toArray()[0];
+            'SELECT COALESCE(c.avatar, s.avatar) AS avatar, s.style, s.xp, COALESCE(c.name, s.full_name) AS full_name FROM students s LEFT JOIN student_controls c ON c.student_key = s.student_key WHERE s.student_key = ?', key).toArray()[0];
         const look = (row?.avatar && sanitizeAvatar(JSON.parse(row.avatar))) || defaultAvatar();
         // Never chosen a voice: one of their own, not the same default as everyone else.
         if (!isEnglishVoice(look.voice)) look.voice = voiceFor(key);
@@ -375,6 +406,7 @@ export class ChatRoom extends DurableObject<Env> {
         const line: Line = { id: crypto.randomUUID(), ts: Date.now(), from, name: from === 'teacher' ? 'Teacher' : '', text, ...(tone ? { tone } : {}) };
         this.sql.exec('INSERT INTO chat (id, ts, lesson, table_id, game, student_key, sender, text, status, target, tone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             line.id, line.ts, this.lesson(), table.id, table.game, from, from === 'teacher' ? 'Teacher' : 'Game', text, 'ok', to ?? null, tone ?? null);
+        for (const key of to ? [to] : table.members) this.sql.exec('INSERT OR IGNORE INTO chat_audience VALUES (?, ?)', line.id, key);
         if (to) this.send(to, { t: 'line', id: table.id, line });
         else this.toTable(table, { t: 'line', id: table.id, line });
     }
@@ -643,6 +675,8 @@ export class ChatRoom extends DurableObject<Env> {
         // A namesake arrived, so someone's shown name changed: everyone's tables are redrawn with the new names.
         if (before && [...before].some(([student, name]) => names.get(student) !== name)) this.renameEveryone();
         else this.toAll({ t: 'names', names: this.wordList() });
+        this.sendControls(key);
+        this.sendPrivate(key);
         this.place(key);
         this.refreshLounges();
         this.saveMemory();
@@ -669,9 +703,14 @@ export class ChatRoom extends DurableObject<Env> {
         try { data = JSON.parse(message) as ClientMessage; } catch { return; }
         const key = seat.key;
         switch (data?.t) {
+            case 'attempt': this.recordAttempt(key, data.text, data.reason); break;
+            case 'tab': this.tabEvent(key, data.hidden); break;
+            case 'played': this.played(key, data.id); break;
+            case 'private': await this.privateReply(key, data.text, data.cid); break;
+            case 'languageHint': await this.hint(key, data.text); break;
             case 'chat': await this.chat(key, data); break;
             case 'check': await this.grammar(key, data.id, data.text); break;
-            case 'act': this.act(key, data.act, data.data); break;
+            case 'act': await this.act(key, data.act, data.data); break;
             case 'typing': { const table = this.tableOf(key); if (table) this.toTable(table, { t: 'typing', id: table.id, key }, key); break; }
             case 'queue': this.enqueue(key, typeof data.game === 'string' ? data.game : null); break;
             case 'leave': { const table = this.tableOf(key); if (table && (table.free || table.state.over)) { this.removeMember(table, key); this.sendLounge(key); this.refreshLounges(); } break; }
@@ -711,13 +750,26 @@ export class ChatRoom extends DurableObject<Env> {
 
     // ---------- What students do ----------
 
-    private act(key: string, act: unknown, data: unknown): void {
+    private async act(key: string, act: unknown, data: unknown): Promise<void> {
         const table = this.tableOf(key);
+        if (this.muted(key)) return;
         if (!table || typeof act !== 'string' || act.length > 20) return;
         const text = (data as { text?: unknown } | null)?.text;
-        if (typeof text === 'string' && (text.length > 400 || chatProblem(text.slice(0, CHAT_MAX)))) {
-            this.send(key, { t: 'notice', level: 'warning', text: 'That answer cannot be sent. Please rewrite it.' });
-            return;
+        const lesson = this.lesson();
+        if (typeof text === 'string') {
+            if (!this.throttle(key, 'answer', 700)) return;
+            const problem = await this.textProblem(text, 400);
+            if (lesson !== this.lesson() || !this.isOpen() || this.tableOf(key) !== table || this.muted(key)) return;
+            const currentProblem = problem || this.lessonProblem(text);
+            if (currentProblem) {
+                this.recordAttempt(key, text, currentProblem, true);
+                this.send(key, { t: 'notice', level: 'warning', text: currentProblem });
+                return;
+            }
+        }
+        if (typeof text === 'string') {
+            this.sql.exec('INSERT INTO chat (id, ts, lesson, table_id, game, student_key, sender, text, status, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                crypto.randomUUID(), Date.now(), lesson, table.id, table.game, key, this.nameOf(key), text, 'answer', 'Submitted game answer');
         }
         this.apply(table, this.gameOf(table).act(table.state, this.ctxOf(table), key, act, data));
     }
@@ -786,7 +838,7 @@ export class ChatRoom extends DurableObject<Env> {
         const now = Date.now();
         let answer: Awaited<ReturnType<typeof checkGrammar>> = { ok: true };
         if (typeof text === 'string' && now - (this.lastCheck.get(key) ?? 0) >= CHECK_GAP_MS && this.env.OPENAI_API_KEY
-            && !chatProblem(text) && text.trim().split(/\s+/).length >= MIN_WORDS) {
+            && !chatProblem(text) && !this.lessonProblem(text) && text.trim().split(/\s+/).length >= MIN_WORDS) {
             this.lastCheck.set(key, now);
             // Never a hint for something harmful: the AI would rewrite it into better English.
             const verdict = await this.moderated(text);
@@ -797,7 +849,10 @@ export class ChatRoom extends DurableObject<Env> {
 
     private async chat(key: string, data: Extract<ClientMessage, { t: 'chat' }>): Promise<void> {
         const cid = typeof data.cid === 'string' ? data.cid.slice(0, 64) : '';
-        const refuse = (text: string, keep = true) => this.send(key, { t: 'refused', cid, text, keep });
+        const refuse = (text: string, keep = true, record = true) => {
+            if (record && this.throttle(key, 'refusal', 500)) this.recordAttempt(key, data.text, text, true);
+            this.send(key, { t: 'refused', cid, text, keep });
+        };
         const table = this.tableOf(key);
         if (!table) return refuse('You are not at a table yet.');
         if (this.muted(key)) return refuse('Your teacher paused your chat.');
@@ -806,38 +861,45 @@ export class ChatRoom extends DurableObject<Env> {
         if (now - (this.lastChat.get(key) ?? 0) < CHAT_GAP_MS) return refuse('Wait a moment…');
         this.lastChat.set(key, now);
 
-        let problem = chatProblem(value);
+        const lesson = this.lesson();
+        let matchedTerm = await this.blockedTerm(value);
+        let problem = matchedTerm ? 'Your teacher has blocked those words for this lesson. Try another idea.' : chatProblem(value);
         let harm: Harm | null = localHarm(value);
         let flag: string | null = null;
         // On the teacher's laptop every word must be English, whatever the page did.
         if (!problem && this.env.LAN_URL) {
             const { notEnglish } = await import('./english.ts');
             const words = notEnglish(value, this.wordList());
-            if (words.length) return refuse(`Use English words only: ${words.map(item => item.word).join(', ')}.`);
+            if (words.length) problem = `Use English words only: ${words.map(item => item.word).join(', ')}.`;
         }
         if (!problem) {
             const verdict = await this.moderated(value);
             if (verdict.result === 'flagged') { problem = 'That message cannot be sent. Please rewrite it.'; flag = verdict.categories.join(', '); harm = harmFrom(verdict.categories); }
             else if (verdict.result === 'unchecked') flag = 'moderation unavailable';
         }
+        matchedTerm = await this.blockedTerm(value);
+        if (matchedTerm) problem = 'Your teacher has blocked those words for this lesson. Try another idea.';
         // The class may have closed, or the table ended, while the message was checked.
-        if (!this.isOpen() || this.tableOf(key) !== table || this.muted(key)) return refuse('Chat is unavailable right now.');
+        if (lesson !== this.lesson() || !this.isOpen() || this.tableOf(key) !== table || this.muted(key)) return refuse('Chat is unavailable right now.');
         const id = crypto.randomUUID();
         const voice = normalizeVoice(this.person(key).look.voice);
         const store = (status: string, note: string | null, marks: string | null = null) => this.sql.exec(
             'INSERT INTO chat (id, ts, lesson, table_id, game, student_key, sender, text, status, flag, note, voice, marks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             id, now, this.lesson(), table.id, table.game, key, this.nameOf(key), value.slice(0, CHAT_MAX), status, flag, note, voice, marks);
+        problem ||= this.lessonProblem(value);
         if (problem) {
+            const term = matchedTerm;
+            if (term) this.blockedWords.tried('class', String(lesson), term.key, key);
             store('blocked', problem);
             this.bump(key, 'blocked', 1);
             if (harm) this.incident(key, harm, value);
-            return refuse(problem);
+            return refuse(problem, true, false);
         }
         const game = this.gameOf(table);
         const verdict = game.chat(table.state, this.ctxOf(table), key, value);
         if (verdict.block) {
             store('game', verdict.block);
-            return refuse(verdict.block);
+            return refuse(verdict.block, true, false);
         }
         // Sent as written although a better version was offered: mark the words that differ, for everyone who reads it.
         const better = typeof data.better === 'string' ? data.better.slice(0, CHAT_MAX) : null;
@@ -855,6 +917,140 @@ export class ChatRoom extends DurableObject<Env> {
         this.bump(key, 'messages', 1, now);
         this.bump(key, 'words', value.split(/\s+/).filter(Boolean).length);
         this.apply(table, verdict);
+        if (!verdict.secret && !flag) this.ctx.waitUntil(this.rewardParticipation(key, id, value, table, lesson));
+    }
+
+    private terms() { return this.blockedWords.terms('class', String(this.lesson())); }
+    private async blockedTerm(text: string) {
+        if (!this.env.LAN_URL) return blockedIn(text, this.terms());
+        const { notEnglish } = await import('./english.ts');
+        return blockedIn(text, this.terms(), word => notEnglish(word, this.wordList()).length === 0);
+    }
+    private lessonProblem(text: string): string | null { return blockedIn(text, this.terms()) ? 'Your teacher has blocked those words for this lesson. Try another idea.' : null; }
+    private sendControls(key: string): void {
+        const hint = this.sql.exec<{ answer: string | null }>('SELECT answer FROM language_hints WHERE lesson = ? AND student_key = ?', this.lesson(), key).toArray()[0];
+        this.send(key, { t: 'controls', blocked: this.terms(), hintUsed: !!hint });
+        if (hint?.answer) this.send(key, { t: 'languageHint', text: hint.answer, used: true });
+    }
+    private blockedStatus(): BlockedStatus {
+        const lesson = String(this.lesson()); const terms = this.terms();
+        const skipped = this.blockedWords.letThroughKeys('class', lesson);
+        const said = this.sql.exec<{ studentKey: string; text: string }>("SELECT student_key AS studentKey, text FROM chat WHERE lesson = ? AND ts > ? AND status IN ('ok', 'blocked', 'draft') AND student_key NOT IN ('sys', 'teacher') ORDER BY ts DESC LIMIT 300", this.lesson(), Date.now() - 120_000).toArray();
+        const tasks: string[] = [...this.custom()];
+        for (const table of this.tables.values()) for (const key of table.members) {
+            const view = this.gameOf(table).view(table.state, this.ctxOf(table), key);
+            tasks.push(view.now.text, JSON.stringify(view.board), ...(view.starters ?? []));
+        }
+        const repeats = repeated(said, Math.max(3, Math.ceil(this.present().length * .35)), taskWordSet(tasks), key => skipped.has(key) || !!blockedIn(key, terms));
+        return { words: this.blockedWords.view('class', lesson).map(word => ({ ...word, by: word.by.map(student => ({ ...student, name: this.nameOf(student.studentKey) })) })),
+            before: this.blockedWords.before('class', lesson), repeats: repeats.map(item => ({ ...item, students: item.students.map(studentKey => ({ studentKey, name: this.nameOf(studentKey) })) })) };
+    }
+    private throttle(key: string, kind: string, gap: number): boolean {
+        const id = `${kind}:${key}`; const now = Date.now();
+        if (now - (this.telemetry.get(id) ?? 0) < gap) return false;
+        this.telemetry.set(id, now); return true;
+    }
+    private recordAttempt(key: string, value: unknown, reason: unknown, server = false): void {
+        if (typeof value !== 'string' || !value.trim() || typeof reason !== 'string' || (!server && !this.throttle(key, 'attempt', 500))) return;
+        const text = tidy(value).slice(0, 400); const table = this.tableOf(key);
+        this.sql.exec('INSERT INTO chat (id, ts, lesson, table_id, game, student_key, sender, text, status, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            crypto.randomUUID(), Date.now(), this.lesson(), table?.id ?? '', table?.game ?? '', key, this.nameOf(key), text, server ? 'blocked' : 'draft', `${server ? 'Server' : 'Browser'}: ${reason.slice(0, 240)}`);
+        this.bump(key, 'blocked', 1);
+        const term = blockedIn(text, this.terms());
+        if (term) this.blockedWords.tried('class', String(this.lesson()), term.key, key);
+        const harm = localHarm(text); if (harm) this.incident(key, harm, text);
+    }
+    private tabEvent(key: string, hidden: unknown): void {
+        if (typeof hidden !== 'boolean') return;
+        const row = this.sql.exec<{ hidden: number; ts: number }>('SELECT hidden, ts FROM tab_events WHERE lesson = ? AND student_key = ?', this.lesson(), key).toArray()[0];
+        if (row?.hidden === Number(hidden)) return;
+        const count = hidden && (!row || Date.now() - row.ts >= 1000) ? 1 : 0;
+        this.sql.exec('INSERT INTO tab_events VALUES (?, ?, ?, ?, ?) ON CONFLICT(lesson, student_key) DO UPDATE SET count = count + excluded.count, hidden = excluded.hidden, ts = excluded.ts', this.lesson(), key, count, Number(hidden), Date.now());
+    }
+    private played(key: string, id: unknown): void {
+        if (typeof id !== 'string' || !this.throttle(key, 'played', 250) || !this.speechMessage(key, id)) return;
+        this.sql.exec('INSERT INTO playbacks VALUES (?, ?, ?, ?, ?)', crypto.randomUUID(), Date.now(), this.lesson(), key, id);
+        this.sql.exec('DELETE FROM playbacks WHERE ts < ?', Date.now() - 900_000);
+    }
+    heard(token: string, query: string): { plays: { id: string; ts: number; text: string; key: string; name: string }[] } | Failure {
+        if (!this.teacherSignedIn(token)) return { error: 'Please sign in again.', status: 401 };
+        return { plays: this.sql.exec<{ id: string; ts: number; text: string; key: string }>(`SELECT p.id, p.ts, c.text, p.student_key AS key FROM playbacks p JOIN chat c ON c.id = p.chat_id
+            WHERE p.lesson = ? AND p.ts > ? AND instr(lower(c.text), lower(?)) > 0 ORDER BY p.ts DESC LIMIT 100`, this.lesson(), Date.now() - 900_000, query.slice(0, 240)).toArray().map(row => ({ ...row, name: this.nameOf(row.key) })) };
+    }
+    private privateLines(key: string): PrivateLine[] {
+        return this.sql.exec<{ id: string; ts: number; sender: 'student' | 'teacher'; text: string }>('SELECT id, ts, sender, text FROM private_chat WHERE student_key = ? ORDER BY ts DESC, rowid DESC LIMIT 200', key).toArray().reverse().map(row => ({ id: row.id, ts: row.ts, from: row.sender, text: row.text }));
+    }
+    private sendPrivate(key: string): void { this.send(key, { t: 'private', lines: this.privateLines(key) }); }
+    private writePrivate(key: string, sender: 'student' | 'teacher', text: string): void {
+        const id = crypto.randomUUID(); const now = Date.now();
+        this.sql.exec('INSERT INTO private_chat VALUES (?, ?, ?, ?, ?, ?)', id, now, this.lesson(), key, sender, text);
+        this.sql.exec('INSERT INTO chat (id, ts, lesson, table_id, game, student_key, sender, text, status, target) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            id, now, this.lesson(), `private:${key}`, 'private', sender === 'teacher' ? 'teacher' : key, sender === 'teacher' ? 'Teacher' : this.nameOf(key), text, 'private', key);
+        this.sendPrivate(key);
+        if (sender === 'teacher') this.send(key, { t: 'notice', level: 'teacher', text: 'Your teacher sent you a private message. Open “Teacher chat” to reply.' });
+    }
+    privateHistory(token: string, key: string): { lines: PrivateLine[] } | Failure {
+        return this.teacherSignedIn(token) ? { lines: this.privateLines(key) } : { error: 'Please sign in again.', status: 401 };
+    }
+    private async privateReply(key: string, value: unknown, cid: unknown): Promise<void> {
+        if (typeof value !== 'string' || typeof cid !== 'string' || cid.length > 64) return;
+        const refuse = (text: string) => this.send(key, { t: 'refused', cid, text, keep: true });
+        if (!this.throttle(key, 'private', 1000)) return refuse('Wait a moment…');
+        if (this.muted(key)) return refuse('Your teacher paused your chat. You can still ask for help.');
+        const text = tidy(value).trim(); const lesson = this.lesson(); const classroom = this.classrooms.current();
+        const problem = await this.textProblem(text);
+        if (!this.isOpen() || lesson !== this.lesson() || classroom !== this.classrooms.current()) return refuse('The class changed.');
+        const currentProblem = problem || this.lessonProblem(text);
+        if (currentProblem) { this.recordAttempt(key, text, `Private message: ${currentProblem}`, true); return refuse(currentProblem); }
+        if (this.muted(key)) return refuse('Your teacher paused your chat.');
+        this.writePrivate(key, 'student', text);
+        this.help(key, `Private message: ${text}`);
+        this.send(key, { t: 'sent', cid });
+    }
+    private async textProblem(text: string, max = CHAT_MAX): Promise<string | null> {
+        const local = await this.blockedTerm(text) ? 'Your teacher has blocked those words for this lesson. Try another idea.' : chatProblem(text, max); if (local) return local;
+        const verdict = await this.moderated(text);
+        return verdict.result === 'flagged' ? 'That message cannot be sent. Please rewrite it.' : null;
+    }
+    private async hint(key: string, value: unknown): Promise<void> {
+        if (typeof value !== 'string' || !value.trim() || value.length > 240 || !this.throttle(key, 'hint', 2000)) return;
+        const lesson = this.lesson(); const classroom = this.classrooms.current();
+        const reply = (text: string, used: boolean) => this.send(key, { t: 'languageHint', text, used });
+        if (!this.env.OPENAI_API_KEY) return reply('Language hints are unavailable. Ask your teacher.', false);
+        const previous = this.sql.exec<{ answer: string | null }>('SELECT answer FROM language_hints WHERE lesson = ? AND student_key = ?', lesson, key).toArray()[0];
+        if (previous) return reply(previous.answer || 'Your hint is being prepared.', true);
+        // Reserve before the first await, preventing two requests from spending the allowance twice.
+        this.sql.exec('INSERT INTO language_hints VALUES (?, ?, NULL)', lesson, key);
+        let problem = await this.textProblem(value);
+        if (!problem && (await this.moderated(value)).result !== 'clean') problem = 'The safety check is unavailable. Ask your teacher or try again.';
+        const table = this.tableOf(key);
+        let answer = problem ? null : await languageHint(value, table ? this.gameOf(table).view(table.state, this.ctxOf(table), key).now.text : 'Practise a conversation in English.', this.level(), this.env);
+        if (answer && (await this.moderated(answer)).result !== 'clean') answer = null;
+        if (!this.isOpen() || lesson !== this.lesson() || classroom !== this.classrooms.current()) return;
+        if (answer && !this.lessonProblem(answer)) {
+            this.sql.exec('UPDATE language_hints SET answer = ? WHERE lesson = ? AND student_key = ?', answer, lesson, key); reply(answer, true);
+        } else {
+            this.sql.exec('DELETE FROM language_hints WHERE lesson = ? AND student_key = ?', lesson, key); reply(problem || 'No hint is available right now. You can try again or call your teacher.', false);
+        }
+        this.sendControls(key);
+    }
+    private async rewardParticipation(key: string, id: string, text: string, table: Table, lesson: number): Promise<void> {
+        if (!this.env.OPENAI_API_KEY || this.env.OPENAI_PARTICIPATION === '0') return;
+        const classroom = this.classrooms.current();
+        const previous = this.sql.exec<{ text: string }>("SELECT text FROM chat WHERE student_key = ? AND lesson = ? AND status = 'ok' AND id != ? ORDER BY ts DESC, rowid DESC LIMIT 8", key, lesson, id).toArray().reverse().map(row => row.text);
+        if (!this.participation.reserve(String(lesson), classroom, key, id, text, previous)) return;
+        const conversation = this.sql.exec<{ student_key: string; text: string }>("SELECT student_key, text FROM chat WHERE table_id = ? AND status = 'ok' AND student_key NOT IN ('sys', 'teacher') AND id != ? ORDER BY ts DESC, rowid DESC LIMIT 4", table.id, id).toArray().reverse().map(row => ({ self: row.student_key === key, text: row.text }));
+        if (!await participationDecision({ message: text, previous, conversation }, this.env)) return;
+        if (!this.isOpen() || lesson !== this.lesson() || classroom !== this.classrooms.current() || !this.sql.exec("SELECT 1 FROM chat WHERE id = ? AND status = 'ok'", id).toArray().length) return;
+        if (this.participation.reward(id)) this.award(key, 1, 'Useful contribution');
+    }
+    history(token: string, key: string, query: string, before: number): HistoryPage | Failure {
+        if (!this.teacherSignedIn(token)) return { error: 'Please sign in again.', status: 401 };
+        const rows = this.sql.exec<{ cursor: number; id: string; ts: number; lesson: number; table_id: string; student_key: string; sender: string; text: string; status: string; note: string | null; flag: string | null; starred: number }>(`SELECT c.rowid AS cursor, c.*, EXISTS(SELECT 1 FROM chat_stars s WHERE s.chat_id = c.id) AS starred FROM chat c
+            WHERE (? = '' OR c.student_key = ? OR EXISTS(SELECT 1 FROM chat_audience a WHERE a.chat_id = c.id AND a.student_key = ?) OR c.target = ?
+                OR (c.student_key IN ('teacher', 'sys') AND c.target IS NULL AND c.table_id IN (SELECT table_id FROM chat_audience a JOIN chat c2 ON c2.id = a.chat_id WHERE a.student_key = ?)))
+            AND instr(lower(c.text), lower(?)) > 0 AND (? = 0 OR c.rowid < ?) ORDER BY c.rowid DESC LIMIT 101`, key, key, key, key, key, query.slice(0, 240), before, before).toArray();
+        return { lines: rows.slice(0, 100).map(row => ({ id: row.id, ts: row.ts, lesson: row.lesson, table: row.table_id, from: row.student_key, name: row.sender, text: row.text, status: row.status, note: row.note, flag: row.flag, starred: !!row.starred })), next: rows.length > 100 ? rows[99].cursor : null };
     }
 
     // ---------- The teacher ----------
@@ -863,6 +1059,46 @@ export class ChatRoom extends DurableObject<Env> {
         if (!this.teacherSignedIn(token)) return { error: 'Please sign in again.', status: 401 };
         const fail = (error: string): Failure => ({ error, status: 400 });
         switch (action.kind) {
+            case 'classroom': {
+                const problem = this.classrooms.switchTo(action.id, action.name);
+                if (problem) return fail(problem);
+                this.tables.clear(); this.seatOf.clear(); this.session = null; this.queue = {}; this.queueAt = {}; this.gone = {};
+                this.shown = null; this.lastChat.clear(); this.lastCheck.clear(); this.telemetry.clear(); this.moderations.clear(); this.saveMemory();
+                break;
+            }
+            case 'student': {
+                if (!this.sql.exec('SELECT 1 FROM students WHERE student_key = ?', action.key).toArray().length) return fail('Student not found.');
+                const name = cleanName(action.name); const look = sanitizeAvatar(action.look);
+                if (!name || !look) return fail('Choose a name and character.');
+                this.sql.exec('INSERT INTO student_controls VALUES (?, ?, ?) ON CONFLICT(student_key) DO UPDATE SET name = excluded.name, avatar = excluded.avatar', action.key, name, JSON.stringify(look));
+                this.sql.exec('UPDATE students SET alias = ? WHERE student_key = ?', name, action.key);
+                this.shown = null; this.renameEveryone(); break;
+            }
+            case 'words': {
+                if (!this.isOpen()) return fail('Open the class before blocking lesson words.');
+                const terms = this.blockedWords.block('class', String(this.lesson()), action.words);
+                if (typeof terms === 'string') return fail(terms);
+                const rows = this.sql.exec<{ id: string; table_id: string; text: string }>("SELECT id, table_id, text FROM chat WHERE lesson = ? AND status IN ('ok', 'secret') AND student_key NOT IN ('sys', 'teacher')", this.lesson()).toArray();
+                for (const row of rows) {
+                    const term = blockedIn(row.text, terms); if (!term) continue;
+                    this.sql.exec("UPDATE chat SET status = 'removed', note = 'Removed by lesson word filter' WHERE id = ?", row.id);
+                    this.blockedWords.removed('class', String(this.lesson()), term.key, 1);
+                    this.toAll({ t: 'retract', id: row.table_id, line: row.id });
+                }
+                for (const key of this.present()) this.sendControls(key);
+                break;
+            }
+            case 'unblock': this.blockedWords.unblock('class', String(this.lesson()), action.key); for (const key of this.present()) this.sendControls(key); break;
+            case 'allowRepeat': this.blockedWords.letThrough('class', String(this.lesson()), action.key, action.words); break;
+            case 'chatStar': {
+                const row = this.sql.exec<{ student_key: string }>("SELECT student_key FROM chat WHERE id = ? AND lesson = ? AND status = 'ok' AND student_key NOT IN ('sys', 'teacher')", action.id, this.lesson()).toArray()[0];
+                if (!row) return fail('Only a visible message from this lesson can be starred.');
+                if (this.sql.exec('INSERT OR IGNORE INTO chat_stars VALUES (?) RETURNING chat_id', action.id).toArray().length) {
+                    this.award(row.student_key, 5, 'Teacher’s chat star');
+                    this.send(row.student_key, { t: 'notice', level: 'teacher', text: '⭐ Your teacher starred your message! +5 XP' });
+                }
+                break;
+            }
             case 'status': break;
             case 'open': this.setOpen(action.open); break;
             case 'start': { const problem = this.startSession(action.options); if (problem) return fail(problem); break; }
@@ -912,7 +1148,7 @@ export class ChatRoom extends DurableObject<Env> {
                 if (!text) return fail('Write a message.');
                 if (action.to === 'all') { this.toAll({ t: 'notice', level: 'teacher', text }); for (const table of this.tables.values()) this.narrate(table, text, 'teacher'); }
                 else if (action.to === 'table') { const table = this.tables.get(action.id ?? ''); if (!table) return fail('That table is closed.'); this.narrate(table, text, 'teacher'); }
-                else if (action.id) { this.send(action.id, { t: 'notice', level: 'teacher', text }); const table = this.tableOf(action.id); if (table) this.narrate(table, text, 'teacher', action.id); }
+                else if (action.id) { if (!this.sql.exec('SELECT 1 FROM students WHERE student_key = ?', action.id).toArray().length) return fail('Student not found.'); this.writePrivate(action.id, 'teacher', text); }
                 break;
             }
             case 'closeTable': { const table = this.tables.get(action.id); if (table) this.closeTable(table, 'Your teacher closed this table.'); this.refreshLounges(); break; }
@@ -935,6 +1171,7 @@ export class ChatRoom extends DurableObject<Env> {
         for (const table of [...this.tables.values()]) this.closeTable(table, undefined, false);
         this.session = null; this.queue = {}; this.queueAt = {}; this.gone = {};
         if (!open) {
+            this.sql.exec('DELETE FROM language_hints WHERE answer IS NULL');
             this.saveSetting('open', '0');
             for (const ws of this.ctx.getWebSockets()) { try { ws.send(JSON.stringify({ t: 'bye', why: 'closed' } satisfies ServerMessage)); ws.close(CLOSE_CLASS_CLOSED, 'The class is closed.'); } catch { /* already closing */ } }
         } else {
@@ -961,6 +1198,7 @@ export class ChatRoom extends DurableObject<Env> {
             const person = this.person(key); const stat = stats.get(key);
             return { key, name, real: person.real, look: person.look, online: this.online(key), table: this.seatOf.get(key) ?? null,
                 messages: stat?.messages ?? 0, words: stat?.words ?? 0, stars: stat?.stars ?? 0, xp: person.xp, muted: mutes.has(key), soundOff: silenced.has(key),
+                tabSwitches: this.sql.exec<{ count: number }>('SELECT count FROM tab_events WHERE lesson = ? AND student_key = ?', lesson, key).toArray()[0]?.count ?? 0,
                 lastTs: stat?.last_ts ?? 0, blocked: stat?.blocked ?? 0 };
         }).sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
         const tables: TeacherTable[] = [...this.tables.values()].sort((a, b) => a.started - b.started).map(table => {
@@ -995,14 +1233,14 @@ export class ChatRoom extends DurableObject<Env> {
             level: this.level(), ai: !!this.env.OPENAI_API_KEY, games: GAMES.map(info),
             topics: [{ id: 'mix', title: 'A mix of topics', emoji: '🎲' }, ...TOPICS.map(topic => ({ id: topic.id, title: topic.title, emoji: topic.emoji })), ...(this.custom().length ? [{ id: 'custom', title: `My questions (${this.custom().length})`, emoji: '📝' }] : [])],
             session: this.session && game ? { id: this.session.id, game: game.id, title: game.title, icon: game.icon, round: this.session.round, rounds: this.session.rounds, ends: this.session.ends, started: this.session.started } : null,
-            students, tables, alerts, reports,
+            students, tables, alerts, reports, blocked: this.blockedStatus(), classes: this.classrooms.list(), activeClass: this.classrooms.current(),
             waiting: this.present().filter(key => !this.tableOf(key)).map(key => names.get(key) ?? 'Student'),
             custom: this.setting('custom') ?? '',
         };
     }
 
     // Everything one table said, for the teacher.
-    transcript(token: string, id: string): { lines: (Line & { status: string; note: string | null; flag: string | null })[] } | Failure {
+    transcript(token: string, id: string): { lines: (Line & { status: string; note: string | null; flag: string | null; starred: boolean })[] } | Failure {
         if (!this.teacherSignedIn(token)) return { error: 'Please sign in again.', status: 401 };
         const names = this.names();
         const rows = this.sql.exec<{ id: string; ts: number; student_key: string; text: string; status: string; target: string | null; tone: string | null; note: string | null; flag: string | null; marks: string | null }>(
@@ -1010,6 +1248,7 @@ export class ChatRoom extends DurableObject<Env> {
         return { lines: rows.map(row => ({
             id: row.id, ts: row.ts, from: row.student_key, text: row.target ? `(only to ${names.get(row.target) ?? 'one student'}) ${row.text}` : row.text,
             name: row.student_key === 'sys' ? '' : row.student_key === 'teacher' ? 'Teacher' : names.get(row.student_key) ?? 'Student',
+            starred: this.sql.exec('SELECT 1 FROM chat_stars WHERE chat_id = ?', row.id).toArray().length > 0,
             status: row.status, note: row.note, flag: row.flag, ...(row.tone ? { tone: row.tone as Line['tone'] } : {}), ...(row.marks ? { marks: JSON.parse(row.marks) } : {}),
         })) };
     }
