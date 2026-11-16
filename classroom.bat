@@ -10,9 +10,8 @@ rem Wake Render while setup, dependency installation and the build run.
 start "" /min powershell -NoProfile -WindowStyle Hidden -Command "node scripts/warm-speech.mjs"
 
 rem First time on this laptop: ask for the teacher password and save its hash.
-if not exist .dev.vars (
-    node scripts\setup-laptop.mjs || (pause & exit /b 1)
-)
+rem Every time: add the OpenAI key for AI checks if .dev.vars has none yet.
+node scripts\setup-laptop.mjs || (pause & exit /b 1)
 
 rem Every time, so packages added by an update are installed too. Quick when nothing changed.
 echo Checking dependencies...

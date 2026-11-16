@@ -114,7 +114,7 @@ Add the new address (`https://hello-chat.<account>.workers.dev`, or a custom dom
 
 ### On the teacher's laptop
 
-`classroom.bat` runs the same Worker on the laptop for the school network, as in Pixel Plaza: students sign in online (Google needs HTTPS) and are sent to the laptop. Sign in to `/teacher` on the laptop itself; that is what sends students there. `HELLOCHAT_LAN_URL` and `HELLOCHAT_CLOUD_URL` override the addresses.
+`classroom.bat` runs the same Worker on the laptop for the school network, as in Pixel Plaza: students sign in online (Google needs HTTPS) and are sent to the laptop. Sign in to `/teacher` on the laptop itself; that is what sends students there. `HELLOCHAT_LAN_URL` and `HELLOCHAT_CLOUD_URL` override the addresses. `.dev.vars` is git-ignored, so each computer has its own: on its first run `classroom.bat` asks for the teacher password, and when there is no `OPENAI_API_KEY` line it copies the key from a sibling project's `.dev.vars` (Pixel Plaza) or asks for it once.
 
 ### Try it alone
 
