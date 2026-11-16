@@ -86,6 +86,7 @@ Teachers can also star an individual chat message for +5 XP, once per message. W
 - **English only**: every word is checked against a dictionary in the browser (American suggestions, British spellings accepted, classmates' names and the words on the board allowed). A wrong word shows suggestions to tap. On the teacher's laptop the server checks again.
 - **Word filter**: slurs, swearing and unkind phrases are stopped before anyone sees them, and the teacher is told.
 - **OpenAI moderation and grammar hints** (optional): with `OPENAI_API_KEY`, every message is also checked by `omni-moderation-latest`, and a message with one clear mistake gets "Try this: …" with **OK, send this** / **Send mine**. It never blocks. Without a key the top bar says *No AI checks*.
+- **What the OpenAI calls cost**: [OPENAI-FREE-TOKENS.md](OPENAI-FREE-TOKENS.md) says which are free with this account's data-sharing tokens (`gpt-4o-mini`) and which are billed (`gpt-6-luna`).
 - Pasting into the chat is off.
 
 ## Where it runs
