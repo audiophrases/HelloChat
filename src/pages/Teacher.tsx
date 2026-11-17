@@ -1,24 +1,11 @@
 // The teacher's page: open the class, start an activity for everyone with one click, and watch every table talk.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameInfo, Kind, Level, Line, StartOptions, TeacherStatus, TeacherTable } from '../../shared/protocol';
-import { StudentDrawer, LessonControls, CommandPalette } from '../components/TeacherTools';
+import { StudentDrawer, LessonControls, CommandPalette, ClassList } from '../components/TeacherTools';
 import Face from '../components/Face';
 import { joinLink as makeJoinLink } from '../studentAuth';
+import { copyText } from '../utils/copy';
 import './Teacher.css';
-
-// Copies text, also where the clipboard API is missing (a laptop page opened over plain http).
-// When nothing works, the link is shown in a box to copy by hand.
-async function copyText(text: string): Promise<boolean> {
-  try { if (navigator.clipboard) { await navigator.clipboard.writeText(text); return true; } } catch { /* try the old way */ }
-  const box = document.createElement('textarea');
-  box.value = text; box.setAttribute('readonly', ''); box.style.position = 'fixed'; box.style.opacity = '0';
-  document.body.appendChild(box); box.select();
-  let copied = false;
-  try { copied = document.execCommand('copy'); } catch { /* not allowed */ }
-  box.remove();
-  if (!copied) window.prompt('Copy this link for your students:', text);
-  return copied;
-}
 
 const KEY = 'hellochat-teacher-session';
 const readToken = (): string => { try { return sessionStorage.getItem(KEY) ?? ''; } catch { return ''; } };
@@ -253,13 +240,14 @@ export default function Teacher() {
   const joinLink = makeJoinLink(status.laptop?.signInUrl ?? window.location.origin, status.pin ?? '');
   const copyLink = () => void copyText(joinLink).then(copied => { if (copied) flash('Student link copied. Paste it wherever your students will see it.'); });
   const set = (name: 'free' | 'soundOff' | 'secretNames', on: boolean) => void api('setting', { name, on });
+  const className = status.classes.find(item => item.id === status.activeClass)?.name ?? 'Class';
 
   return <div className="teacher">
     <header className="t-top">
       <strong className="t-logo">💬 HelloChat <small>Teacher</small></strong>
       {status.open ? <>
         <button type="button" className="t-pin" title="Click to copy the link for students" onClick={copyLink}>
-          <small>Class PIN</small><b>{status.pin}</b>
+          <small>{className} · PIN</small><b>{status.pin}</b>
         </button>
         <button type="button" className="btn btn-sm btn-primary" title={joinLink} onClick={copyLink}>🔗 Copy student link</button>
         <span className="t-count">👥 {online.length} here</span>
@@ -267,12 +255,12 @@ export default function Teacher() {
         <label className="t-toggle" title="Messages are read aloud in each student’s voice. Headphones recommended."><input type="checkbox" checked={!status.soundOff} onChange={event => set('soundOff', !event.target.checked)} /> Sound</label>
         <label className="t-toggle" title="Students get made-up names like Happy Plato"><input type="checkbox" checked={status.secretNames} onChange={event => set('secretNames', event.target.checked)} /> Secret names</label>
         <label className="t-toggle">Level <select value={status.level} onChange={event => void api('level', { level: event.target.value as Level })}><option>A1</option><option>A2</option><option>B1</option></select></label>
-      </> : <span className="muted">The class is closed.</span>}
+      </> : <span className="muted">{className} is closed.</span>}
       <span className="t-space" />
       <CommandPalette status={status} api={api} flash={flash} onStudent={setOpenStudent} onTable={setOpenTable} onReport={() => setReport(true)} />
       {!status.ai && <span className="t-warn" title="Set OPENAI_API_KEY for AI moderation and grammar hints. The word filter still checks every message.">⚠ No AI checks</span>}
       {status.open && <button type="button" className="btn btn-sm" onClick={() => setReport(true)}>📋 Report</button>}
-      <button type="button" className={`btn ${status.open ? 'btn-danger' : 'btn-go'}`} onClick={() => { if (!status.open || window.confirm('Close the class? Everyone is sent out.')) void api('class', { open: !status.open }); }}>{status.open ? 'Close class' : 'Open class'}</button>
+      <button type="button" className={`btn ${status.open ? 'btn-danger' : 'btn-go'}`} title={className} onClick={() => { if (!status.open || window.confirm(`Close ${className}? Everyone is sent out. The PIN and link stay the same for next time.`)) void api('class', { open: !status.open }); }}>{status.open ? 'Close class' : 'Open class'}</button>
       <button type="button" className="btn btn-sm" onClick={() => { storeToken(''); setToken(''); }}>Sign out</button>
     </header>
     {message && <div className="t-flash" role="status">{message}</div>}
@@ -281,11 +269,11 @@ export default function Teacher() {
     {!status.open ? <div className="t-closed card">
       <h1>Ready when you are</h1>
       <ol>
-        <li>Press <b>Open class</b>. You get a PIN for this lesson.</li>
-        <li>Students open this site, sign in and type the PIN.</li>
-        <li>They can play straight away (free play), or you start an activity for everyone.</li>
+        <li>Each class has its own PIN and link. They never change, so share the link once (on Google Classroom, for example).</li>
+        <li>Press <b>▶ Open</b> next to the class you are teaching now.</li>
+        <li>Students open the link and sign in, or type the PIN. They can play straight away, or you start an activity for everyone.</li>
       </ol>
-      <button type="button" className="btn btn-go btn-lg" onClick={() => void api('class', { open: true })}>Open class</button>
+      <ClassList status={status} api={api} flash={flash} />
     </div> : <div className="t-main">
       <div className="t-col">
         {status.session ? <section className="card t-session">

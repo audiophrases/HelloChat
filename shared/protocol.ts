@@ -163,7 +163,7 @@ export type TeacherReport = { id: string; ts: number; quest: string; names: stri
 
 export type TeacherStatus = {
     blocked: import('./blockedWords').BlockedStatus;
-    classes: { id: string; name: string }[]; activeClass: string;
+    classes: { id: string; name: string; pin: string }[]; activeClass: string;   // each class keeps its PIN, so its link never expires
     open: boolean; pin: string | null; free: boolean; soundOff: boolean; secretNames: boolean; level: Level; ai: boolean;
     games: GameInfo[]; topics: { id: string; title: string; emoji: string }[];
     session: { id: string; game: string; title: string; icon: string; round: number; rounds: number; ends: number | null; started: number } | null;

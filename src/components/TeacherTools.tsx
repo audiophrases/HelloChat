@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HistoryPage, PrivateLine, TeacherStatus, TeacherStudent } from '../../shared/protocol';
 import AvatarEditor from './AvatarEditor';
 import type { Api } from '../pages/Teacher';
+import { joinLink } from '../studentAuth';
+import { copyText } from '../utils/copy';
 
 type Common = { api: Api; flash: (text: string) => void };
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Please try again.';
@@ -74,9 +76,50 @@ export function StudentDrawer({ student, api, flash, onClose }: Common & { stude
   </aside></div>;
 }
 
+// Every class with its name, its PIN and its link, which stay the same lesson after lesson.
+export function ClassList({ status, api, flash }: Common & { status: TeacherStatus }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const base = status.laptop?.signInUrl ?? window.location.origin;
+  const run = (work: () => Promise<unknown>) => { setBusy(true); return work().catch(cause => { flash(errorText(cause)); throw cause; }).finally(() => setBusy(false)); };
+  const rename = (id: string) => void run(() => api('classroom-name', { id, name: draft })).then(() => setEditing(null), () => { /* shown */ });
+  const open = (id: string) => void run(async () => { if (id !== status.activeClass) await api('classroom', { id }); await api('class', { open: true }); }).catch(() => { /* shown */ });
+  const newPin = (id: string, className: string) => {
+    if (window.confirm(`Make a new PIN for ${className}? The old PIN and link stop working, so you will need to share the new link.`))
+      void run(() => api('classroom-pin', { id })).then(() => flash(`${className} has a new PIN. Copy its new link for your students.`), () => { /* shown */ });
+  };
+  const copy = (className: string, pin: string) => void copyText(joinLink(base, pin)).then(copied => { if (copied) flash(`${className}’s link copied. It stays the same every lesson.`); });
+  return <div className="t-classes">
+    {status.classes.map(item => {
+      const active = item.id === status.activeClass;
+      return <div key={item.id} className={`t-class${active && status.open ? ' open' : ''}`}>
+        {editing === item.id
+          ? <form className="t-class-rename" onSubmit={event => { event.preventDefault(); rename(item.id); }}>
+            <input className="input-field" aria-label={`New name for ${item.name}`} value={draft} maxLength={60} autoFocus onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditing(null); }} />
+            <button className="btn btn-sm btn-primary" disabled={busy || !draft.trim()}>Save</button>
+            <button type="button" className="btn btn-sm" onClick={() => setEditing(null)}>Cancel</button>
+          </form>
+          : <span className="t-class-name"><b>{item.name}</b>{active && status.open && <span className="t-chip">open now</span>}
+            <button type="button" className="link-btn" title={`Rename ${item.name}`} aria-label={`Rename ${item.name}`} onClick={() => { setEditing(item.id); setDraft(item.name); }}>✏️ Rename</button></span>}
+        <span className="t-class-pin" title="This PIN stays the same every lesson">PIN <b>{item.pin}</b></span>
+        <span className="t-class-actions">
+          <button type="button" className="btn btn-sm" title={joinLink(base, item.pin)} onClick={() => copy(item.name, item.pin)}>🔗 Copy link</button>
+          {!status.open && <button type="button" className="btn btn-sm btn-go" disabled={busy} onClick={() => open(item.id)}>▶ Open</button>}
+          <button type="button" className="link-btn t-class-newpin" disabled={busy} onClick={() => newPin(item.id, item.name)}>New PIN</button>
+        </span>
+      </div>;
+    })}
+    <form className="t-say" onSubmit={e => { e.preventDefault(); void run(() => api('classroom', { name })).then(() => setName(''), () => { /* shown */ }); }}>
+      <input className="input-field" aria-label="New class name" value={name} maxLength={60} onChange={e => setName(e.target.value)} placeholder="A new class, e.g. 4ESOB" />
+      <button className="btn" disabled={busy || status.open || !name.trim()} title={status.open ? 'Close the class first' : undefined}>Add class</button>
+    </form>
+  </div>;
+}
+
 export function LessonControls({ status, api, flash }: Common & { status: TeacherStatus }) {
   const [words, setWords] = useState('');
-  const [name, setName] = useState('');
   const [phrase, setPhrase] = useState('');
   const [plays, setPlays] = useState<{ id: string; ts: number; text: string; key: string; name: string }[]>([]);
   const [error, setError] = useState('');
@@ -100,7 +143,7 @@ export function LessonControls({ status, api, flash }: Common & { status: Teache
     {status.blocked.repeats.map(repeat => <div className="t-repeat" key={repeat.key}><p><b>{repeat.students.length} students are repeating “{repeat.words}”.</b> Block it for this lesson?</p><p className="muted">{repeat.examples.join(' · ')}</p><button className="btn" disabled={!status.open} onClick={() => void act('words', { words: [repeat.words] })}>Block phrase</button> <button className="btn" onClick={() => void act('allow-repeat', repeat)}>Leave it alone</button></div>)}
     <details id="heard-something" onToggle={e => setHeardOpen(e.currentTarget.open)}><summary>Heard something?</summary><p className="muted">Playback reported by students’ devices in the last 15 minutes.</p><input className="input-field" type="search" value={phrase} aria-label="Find a phrase read aloud" placeholder="Type the phrase you heard…" onChange={e => setPhrase(e.target.value)} />{error && <p role="alert">{error}</p>}<div className="t-private">{plays.map(play => <p key={play.id}><q>{play.text}</q> — {play.name} · {new Date(play.ts).toLocaleTimeString()} <button className="btn btn-sm" onClick={() => void act('sound', { key: play.key, off: true })}>Silence device</button></p>)}{!plays.length && <p>No matching playback.</p>}</div></details>
     <details id="message-history" onToggle={e => setHistoryOpen(e.currentTarget.open)}><summary>Search message history</summary>{historyOpen && <History api={api} flash={flash} />}</details>
-    <details id="saved-classes"><summary>Saved classes: {status.classes.find(item => item.id === status.activeClass)?.name}</summary><p className="muted">Progress and history are saved automatically when switching. Close the class first.</p><label>Class<select className="input-field" disabled={status.open} value={status.activeClass} onChange={e => void act('classroom', { id: e.target.value })}>{status.classes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><form className="t-say" onSubmit={e => { e.preventDefault(); void api('classroom', { name }).then(() => setName('')).catch(cause => flash(errorText(cause))); }}><input className="input-field" aria-label="New class name" value={name} maxLength={60} onChange={e => setName(e.target.value)} placeholder="Name a new class…" /><button className="btn" disabled={status.open || !name.trim()}>Create class</button></form></details>
+    <details id="saved-classes"><summary>Classes: {status.classes.find(item => item.id === status.activeClass)?.name}</summary><p className="muted">Each class keeps its PIN and link for good. Progress and history are saved when you switch; close the class first.</p><ClassList status={status} api={api} flash={flash} /></details>
   </section>;
 }
 
@@ -117,7 +160,7 @@ export function CommandPalette({ status, api, flash, onStudent, onTable, onRepor
     { label: status.open ? 'Close class' : 'Open class', run: () => void api('class', { open: !status.open }).catch(cause => flash(errorText(cause))) },
     { label: status.soundOff ? 'Give everyone sound' : 'Turn everyone’s sound off', run: () => void api('setting', { name: 'soundOff', on: !status.soundOff }).catch(cause => flash(errorText(cause))) },
     { label: 'Class report', run: onReport },
-    ...[['lesson-words', 'Blocked words'], ['heard-something', 'Heard something?'], ['message-history', 'Search messages'], ['saved-classes', 'Saved classes']].map(([id, label]) => ({ label, run: () => section(id) })),
+    ...[['lesson-words', 'Blocked words'], ['heard-something', 'Heard something?'], ['message-history', 'Search messages'], ['saved-classes', 'Classes: rename, links, PINs']].map(([id, label]) => ({ label, run: () => section(id) })),
     ...status.students.map(student => ({ label: `Student: ${student.name} (${student.real})`, run: () => onStudent(student.key) })),
     ...status.tables.map(table => ({ label: `Table: ${table.title} — ${table.members.map(member => member.name).join(', ')}`, run: () => onTable(table.id) }))
   ].filter(command => command.label.toLocaleLowerCase().includes(query.toLocaleLowerCase()));

@@ -291,8 +291,23 @@ async function main() {
     await renamed.until(() => renamed.events.some(event => event.t === 'bye' && event.why === 'closed'), 'the class to close');
     await assert.rejects(api('/api/room/join', { pin: '123456' }, { 'x-student-token': 'tester:Ana' }), /not opened/);
     step('closing the class sends everyone out');
-    const other = await teacher('classroom', { name: 'Other class' });
+    const mainPin = status.classes.find(item => item.id === 'main').pin;
+    assert.match(mainPin, /^\d{6}$/);
+    const other = await teacher('classroom', { name: '  Other   class ' });
     assert.equal(other.students.length, 0); assert.equal((await teacher('history')).lines.length, 0);
+    const otherClass = other.classes.find(item => item.id === other.activeClass);
+    assert.equal(otherClass.name, 'Other class', 'names are tidied');
+    assert.match(otherClass.pin, /^\d{6}$/); assert.notEqual(otherClass.pin, mainPin, 'each class has its own PIN');
+    const otherOpen = await teacher('class', { open: true });
+    assert.equal(otherOpen.pin, otherClass.pin, 'a class opens with its own PIN');
+    await assert.rejects(api('/api/room/join', { pin: mainPin }, { 'x-student-token': 'tester:Cleo' }), /PIN for My class, which is not open/);
+    await teacher('class', { open: false });
+    await assert.rejects(teacher('classroom-name', { id: 'main', name: '   ' }), /class name/);
+    const renamedClass = await teacher('classroom-name', { id: 'main', name: '4ESOB' });
+    assert.equal(renamedClass.classes.find(item => item.id === 'main').name, '4ESOB');
+    assert.equal(renamedClass.classes.find(item => item.id === 'main').pin, mainPin, 'renaming keeps the PIN');
+    const newPin = (await teacher('classroom-pin', { id: otherClass.id })).classes.find(item => item.id === otherClass.id).pin;
+    assert.notEqual(newPin, otherClass.pin, 'a new PIN replaces the old one');
     const restored = await teacher('classroom', { id: 'main' });
     assert.equal(restored.students.find(student => student.key === ana.me.key).xp, savedXp);
     assert.equal(restored.students.find(student => student.key === ana.me.key).name, 'Anita');
@@ -304,12 +319,15 @@ async function main() {
     assert.equal(pageOne.lines.length, 100); assert.equal(pageTwo.lines.length, 5); assert.equal(pageTwo.next, null);
     assert.equal(new Set([...pageOne.lines, ...pageTwo.lines].map(line => line.id)).size, 105);
     const reopened = await teacher('class', { open: true });
+    assert.equal(reopened.pin, mainPin, 'the same PIN and link next lesson');
+    await assert.rejects(api('/api/room/join', { pin: otherClass.pin }, { 'x-student-token': 'tester:Dev' }), /Check the class PIN/);
     assert.equal(reopened.blocked.words.length, 0);
     assert.ok(reopened.blocked.before.includes('andrei'));
     const newLesson = new Student('Ana'); await newLesson.join(reopened.pin);
     await newLesson.until(() => newLesson.events.some(event => event.t === 'controls' && !event.hintUsed), 'new lesson gets a new hint');
     await teacher('class', { open: false });
     step('saved classes isolate and restore progress, edits and histories; lesson word rules reset');
+    step('each class keeps its PIN and link for good; classes can be renamed and given a new PIN');
     console.log('\n  The live lesson passed.\n');
 }
 

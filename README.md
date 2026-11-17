@@ -53,13 +53,13 @@ Every game checks what it can without AI: a question needs a question mark or a 
 
 ## In class
 
-1. Open `/teacher`, sign in with the teacher password and press **Open class**. Write the 6-digit **PIN** on the board (click it to copy a join link).
-2. Students open the site, sign in with their school Google account and type the PIN. The first time they make a character.
+1. Open `/teacher`, sign in with the teacher password and press **▶ Open** next to your class (for example *4ESOB*). Each class has its own 6-digit **PIN** and link that never change: share the link once (**🔗 Copy link**, for example on Google Classroom) and it works every lesson.
+2. Students open the class link (or the site, and type the PIN) and sign in with their school Google account. The first time they make a character. A student who uses another class's PIN is told that class is not open.
 3. With **Free play** on (the default) they can start at once: a student taps a game, classmates see "Ana is waiting. Join!", and the table starts when enough have tapped.
 4. Or **start an activity for everyone**: pick a warm-up, a board game or side quests, and press **Start**. The game seats everyone (tables of 2, 3 or 4, nobody alone). Options: level (A1, A2, B1), the topic of the questions (thirteen topics, or **My own questions**), students per table, rounds and minutes per round. At the end of a round everyone gets new partners. **Next round now**, **+1 minute** and **End activity** are in the same place.
 5. **Tables** shows every table as it talks: who is there, what the game is waiting for, the last lines. Click a table to read everything, write to it as the teacher, take a message down (🗑) or end its game. **Needs you** lists students who pressed 🙋 Help, messages the safety filter stopped, and students who stay quiet while their table talks. Click a student to message them privately, pause their chat (🤐) or turn their sound off (🔇).
 6. **📋 Report** builds a prompt to paste into an AI chat: what every table wrote, with totals, asking who did well, who needs help and for the class's common errors. Names are hidden by default.
-7. **Close class** sends everyone out. The next lesson gets a new PIN; characters, stars and levels are kept.
+7. **Close class** sends everyone out. The PIN and link stay the same for next time; characters, stars and levels are kept.
 
 Other switches in the top bar: **Sound** (messages are read aloud in each student's character voice; headphones recommended), **Secret names** (made-up names such as *Happy Plato*; the teacher still sees real names) and **Level**.
 
@@ -79,7 +79,7 @@ Teachers can also star an individual chat message for +5 XP, once per message. W
 - **Heard something?**: search device-reported playback from the last 15 minutes and silence the device.
 - **Left the page** (as in Pixel Plaza): switching to another tab or app, or minimising the window, is counted for the lesson. The student list shows a pulsing **⚠️ Away 0:42** while a student is gone (also on their table's card) and **⚠️ 3×** afterwards; the student drawer says the same. The student sees a "You left the game" card, a reminder when they come back and a **⚠️ Left the page 3×** badge. Reloading the page does not count. It never shows what was opened elsewhere.
 - **Commands**: Ctrl+K (Cmd+K on Mac) finds students, tables, and common controls.
-- **Saved classes**: close the class, then switch or create a named class. Progress, student edits, histories and settings are saved automatically on switching. One class can be open at a time; these saves do not resume a live round.
+- **Classes**: every class has a name, a PIN and a link that stay the same lesson after lesson. **✏️ Rename** a class at any time; **New PIN** replaces a PIN and link that went somewhere they should not (the old ones stop working). Add a class or switch classes when the class is closed: progress, student edits, histories and settings are saved automatically. One class can be open at a time; switching does not resume a live round.
 - **Free language hint**: under Help, students get one AI sentence starter per lesson. Failed requests preserve the allowance. Hints require a successful safety check and never replace the teacher-help button.
 
 ## Chat checks

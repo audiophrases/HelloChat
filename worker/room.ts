@@ -64,6 +64,8 @@ export type TeacherAction =
     | { kind: 'chatStar'; id: string }
     | { kind: 'student'; key: string; name: string; look: Look }
     | { kind: 'classroom'; id: string; name?: string }
+    | { kind: 'renameClass'; id: string; name: string }
+    | { kind: 'newPin'; id: string }
     | { kind: 'status' }
     | { kind: 'open'; open: boolean }
     | { kind: 'start'; options: StartOptions }
@@ -185,7 +187,10 @@ export class ChatRoom extends DurableObject<Env> {
 
     // ---------- What the HTTP routes ask ----------
 
-    classPin(): string | null { return this.isOpen() ? this.setting('pin') : null; }
+    // The open class's own PIN: the same every lesson, so its link never expires.
+    classPin(): string | null { return this.isOpen() ? this.classrooms.pinOf(this.classrooms.current()) : null; }
+    // Which saved class a PIN belongs to, for a student who typed the PIN of a class that is not open.
+    classNameFor(pin: string): string | null { return this.classrooms.byPin(pin)?.name ?? null; }
 
     savedAvatar(studentKey: string): Look | null {
         const row = this.sql.exec<{ avatar: string | null }>('SELECT avatar FROM students WHERE student_key = ?', studentKey).toArray()[0];
@@ -1072,6 +1077,8 @@ export class ChatRoom extends DurableObject<Env> {
                 this.shown = null; this.lastChat.clear(); this.lastCheck.clear(); this.telemetry.clear(); this.moderations.clear(); this.saveMemory();
                 break;
             }
+            case 'renameClass': { const problem = this.classrooms.rename(action.id, action.name); if (problem) return fail(problem); break; }
+            case 'newPin': { const problem = this.classrooms.newPin(action.id); if (problem) return fail(problem); break; }
             case 'student': {
                 if (!this.sql.exec('SELECT 1 FROM students WHERE student_key = ?', action.key).toArray().length) return fail('Student not found.');
                 const name = cleanName(action.name); const look = sanitizeAvatar(action.look);
@@ -1181,9 +1188,7 @@ export class ChatRoom extends DurableObject<Env> {
             this.saveSetting('open', '0');
             for (const ws of this.ctx.getWebSockets()) { try { ws.send(JSON.stringify({ t: 'bye', why: 'closed' } satisfies ServerMessage)); ws.close(CLOSE_CLASS_CLOSED, 'The class is closed.'); } catch { /* already closing */ } }
         } else {
-            // A new lesson: a new PIN, and yesterday's quiet students are not today's.
-            const digits = crypto.getRandomValues(new Uint32Array(1))[0] % 900_000 + 100_000;
-            this.saveSetting('pin', String(digits));
+            // A new lesson: yesterday's quiet students are not today's. The PIN stays: it belongs to the class.
             this.saveSetting('lesson', String(Date.now()));
             this.saveSetting('open', '1');
             this.shown = null;

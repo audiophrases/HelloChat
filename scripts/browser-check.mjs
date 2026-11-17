@@ -94,6 +94,13 @@ async function main() {
     const teacher = await Tab.open(`${origin}/teacher?autologin=tester`, 1440, 900);
     await teacher.until(`document.body.innerText.includes('Open class')`, 'the teacher page');
     await teacher.shot('01-teacher-closed');
+    // Each class keeps its PIN and link; the teacher renames one in place.
+    await teacher.run(`document.querySelector('.t-closed .t-class-name .link-btn').click();`);
+    await teacher.until(`document.querySelector('.t-closed .t-class-rename input')`, 'the rename box');
+    await teacher.run(`const box = document.querySelector('.t-closed .t-class-rename input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(box, '4ESOB'); box.dispatchEvent(new Event('input', { bubbles: true }));`);
+    await teacher.run(`document.querySelector('.t-closed .t-class-rename .btn-primary').click();`);
+    await teacher.until(`document.querySelector('.t-closed .t-class-name b')?.innerText === '4ESOB'`, 'the class renamed');
+    await teacher.shot('01b-teacher-classes');
     const { pin } = await teach('class', { open: true });
 
     const names = ['Ana', 'Ben', 'Cleo', 'Dev'];

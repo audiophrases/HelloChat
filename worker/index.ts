@@ -106,6 +106,8 @@ function teacherAction(path: string, method: string, body: any): TeacherAction |
         case '/api/teacher/classroom': return body?.name !== undefined
             ? text(body.name, 60) ? { kind: 'classroom', id: crypto.randomUUID(), name: body.name } : null
             : text(body?.id, 64) ? { kind: 'classroom', id: body.id } : null;
+        case '/api/teacher/classroom-name': return text(body?.id, 64) && text(body?.name, 60) ? { kind: 'renameClass', id: body.id, name: body.name } : null;
+        case '/api/teacher/classroom-pin': return text(body?.id, 64) ? { kind: 'newPin', id: body.id } : null;
         case '/api/teacher/class': return typeof body?.open === 'boolean' ? { kind: 'open', open: body.open } : null;
         case '/api/teacher/start': {
             if (!text(body?.game, 40) || !gameById(body.game)) return null;
@@ -205,7 +207,11 @@ async function handle(request: Request, env: Env): Promise<Response> {
         if (!classPin) return json({ error: 'Your teacher has not opened the class yet.' }, 403);
         const pin = await guarded(env, `pin:${student.studentKey}`, () => secretsMatch(body?.pin, classPin));
         if (pin === 'limited') return json({ error: 'Too many tries. Wait a minute, then try again.' }, 429);
-        if (pin === 'wrong') return json({ error: 'Check the class PIN.' }, 403);
+        if (pin === 'wrong') {
+            // Already counted as a wrong try, so this cannot be used to look PINs up.
+            const other = typeof body?.pin === 'string' && /^\d{6}$/.test(body.pin) ? await room(env).classNameFor(body.pin) : null;
+            return json({ error: other ? `That is the PIN for ${other}, which is not open right now.` : 'Check the class PIN.' }, 403);
+        }
         const avatar = body?.avatar == null ? null : sanitizeAvatar(body.avatar);
         if (body?.avatar != null && !avatar) return json({ error: 'That character is not available.' }, 400);
         const result = await room(env).issueTicket(student, avatar);

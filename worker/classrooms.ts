@@ -2,6 +2,11 @@
 const TABLES = ['students', 'tables', 'chat', 'chat_audience', 'mutes', 'sound_off', 'stats', 'alerts', 'reports', 'blocked_words', 'blocked_tries', 'participation_checks', 'student_controls', 'chat_stars', 'private_chat', 'language_hints', 'tab_events', 'playbacks'] as const;
 const SETTINGS = ['lesson', 'free', 'sound_all_off', 'secret_names', 'level', 'custom'];
 type Row = Record<string, string | number | null>;
+export type SavedClass = { id: string; name: string; pin: string };
+const NAME_PROBLEM = 'Use a class name up to 60 characters.';
+const cleanName = (name: string): string | null => { const value = name.trim().replace(/\s+/g, ' '); return value && value.length <= 60 ? value : null; };
+
+// Every class keeps its own PIN, so its join link works lesson after lesson until the teacher asks for a new one.
 export class Classrooms {
     private sql: SqlStorage;
     private storage: DurableObjectStorage;
@@ -11,12 +16,40 @@ export class Classrooms {
             CREATE TABLE IF NOT EXISTS saved_rows (class_id TEXT NOT NULL, table_name TEXT NOT NULL, data TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS saved_rows_class ON saved_rows(class_id);
             INSERT OR IGNORE INTO saved_classes (id, name) VALUES ('main', 'My class');`);
+        if (!this.sql.exec('SELECT * FROM saved_classes LIMIT 0').columnNames.includes('pin')) this.sql.exec('ALTER TABLE saved_classes ADD COLUMN pin TEXT');
+        // Classes saved before PINs were kept get one now. The open class keeps the PIN it has, so a link already shared still works.
+        const live = this.sql.exec<{ value: string }>("SELECT value FROM settings WHERE key = 'pin'").toArray()[0]?.value;
+        for (const row of this.sql.exec<{ id: string }>('SELECT id FROM saved_classes WHERE pin IS NULL ORDER BY rowid').toArray()) {
+            const pin = row.id === this.current() && live && /^\d{6}$/.test(live) && !this.byPin(live) ? live : this.freshPin();
+            this.sql.exec('UPDATE saved_classes SET pin = ? WHERE id = ?', pin, row.id);
+        }
+    }
+    private freshPin(): string {
+        for (;;) {
+            const pin = String(crypto.getRandomValues(new Uint32Array(1))[0] % 900_000 + 100_000);
+            if (!this.byPin(pin)) return pin;
+        }
+    }
+    byPin(pin: string): SavedClass | null { return this.sql.exec<SavedClass>('SELECT id, name, pin FROM saved_classes WHERE pin = ?', pin).toArray()[0] ?? null; }
+    pinOf(id: string): string | null { return this.sql.exec<{ pin: string }>('SELECT pin FROM saved_classes WHERE id = ?', id).toArray()[0]?.pin ?? null; }
+    rename(id: string, name: string): string | null {
+        const value = cleanName(name);
+        if (!value) return NAME_PROBLEM;
+        if (!this.pinOf(id)) return 'That saved class was not found.';
+        this.sql.exec('UPDATE saved_classes SET name = ? WHERE id = ?', value, id);
+        return null;
+    }
+    // A new PIN for a class whose link went where it should not: the old PIN and link stop working at once.
+    newPin(id: string): string | null {
+        if (!this.pinOf(id)) return 'That saved class was not found.';
+        this.sql.exec('UPDATE saved_classes SET pin = ? WHERE id = ?', this.freshPin(), id);
+        return null;
     }
     current(): string { return this.sql.exec<{ value: string }>("SELECT value FROM settings WHERE key = 'active_class'").toArray()[0]?.value ?? 'main'; }
-    list(): { id: string; name: string }[] { return this.sql.exec<{ id: string; name: string }>('SELECT id, name FROM saved_classes ORDER BY rowid').toArray(); }
+    list(): SavedClass[] { return this.sql.exec<SavedClass>('SELECT id, name, pin FROM saved_classes ORDER BY rowid').toArray(); }
     switchTo(id: string, name?: string): string | null {
         if (this.sql.exec("SELECT 1 FROM settings WHERE key = 'open' AND value = '1'").toArray().length) return 'Close the class before switching saved classes.';
-        if (name !== undefined && (!name.trim() || name.trim().length > 60 || this.list().length >= 30)) return 'Use a name up to 60 characters. Up to 30 saved classes.';
+        if (name !== undefined && (!cleanName(name) || this.list().length >= 30)) return 'Use a name up to 60 characters. Up to 30 saved classes.';
         if (name === undefined && !this.list().some(item => item.id === id)) return 'That saved class was not found.';
         if (id === this.current()) return null;
         this.storage.transactionSync(() => {
@@ -26,7 +59,7 @@ export class Classrooms {
                 this.sql.exec('INSERT INTO saved_rows VALUES (?, ?, ?)', current, table, JSON.stringify(row));
             for (const key of SETTINGS) for (const row of this.sql.exec<Row>('SELECT * FROM settings WHERE key = ?', key).toArray())
                 this.sql.exec('INSERT INTO saved_rows VALUES (?, ?, ?)', current, 'settings', JSON.stringify(row));
-            if (name !== undefined) this.sql.exec('INSERT INTO saved_classes VALUES (?, ?)', id, name.trim());
+            if (name !== undefined) this.sql.exec('INSERT INTO saved_classes (id, name, pin) VALUES (?, ?, ?)', id, cleanName(name), this.freshPin());
             for (const table of TABLES) this.sql.exec(`DELETE FROM ${table}`);
             for (const key of SETTINGS) this.sql.exec('DELETE FROM settings WHERE key = ?', key);
             for (const row of this.sql.exec<{ table_name: string; data: string }>('SELECT table_name, data FROM saved_rows WHERE class_id = ?', id).toArray()) {
