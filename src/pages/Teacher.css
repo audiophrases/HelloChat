@@ -64,6 +64,8 @@
 .t-alert-text { flex: 1; overflow-wrap: anywhere; font-weight: 600; }
 .t-alert.quiet { opacity: .8; }
 .t-empty { padding: 1.2rem; font-weight: 700; color: var(--ink-soft); }
+.t-share { display: flex; gap: .5rem; margin-top: .7rem; }
+.t-share .input-field { flex: 1; min-width: 0; font-weight: 600; color: var(--ink); }
 .t-table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .7rem; }
 .t-table { text-align: left; padding: .7rem .8rem; border: 3px solid transparent; display: flex; flex-direction: column; gap: .35rem; }
 .t-table:hover { border-color: var(--primary); }

@@ -3,7 +3,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameInfo, Kind, Level, Line, StartOptions, TeacherStatus, TeacherTable } from '../../shared/protocol';
 import { StudentDrawer, LessonControls, CommandPalette } from '../components/TeacherTools';
 import Face from '../components/Face';
+import { joinLink as makeJoinLink } from '../studentAuth';
 import './Teacher.css';
+
+// Copies text, also where the clipboard API is missing (a laptop page opened over plain http).
+// When nothing works, the link is shown in a box to copy by hand.
+async function copyText(text: string): Promise<boolean> {
+  try { if (navigator.clipboard) { await navigator.clipboard.writeText(text); return true; } } catch { /* try the old way */ }
+  const box = document.createElement('textarea');
+  box.value = text; box.setAttribute('readonly', ''); box.style.position = 'fixed'; box.style.opacity = '0';
+  document.body.appendChild(box); box.select();
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch { /* not allowed */ }
+  box.remove();
+  if (!copied) window.prompt('Copy this link for your students:', text);
+  return copied;
+}
 
 const KEY = 'hellochat-teacher-session';
 const readToken = (): string => { try { return sessionStorage.getItem(KEY) ?? ''; } catch { return ''; } };
@@ -234,16 +249,18 @@ export default function Teacher() {
   if (!token) return <SignIn onToken={(value, notice) => { storeToken(value); setToken(value); if (notice) flash(notice); }} />;
   if (!status) return <p style={{ padding: '2rem' }}>Loading…</p>;
   const online = status.students.filter(item => item.online);
-  const joinLink = `${(status.laptop?.signInUrl ?? window.location.origin).replace(/\/$/, '')}/?pin=${status.pin ?? ''}`;
+  const joinLink = makeJoinLink(status.laptop?.signInUrl ?? window.location.origin, status.pin ?? '');
+  const copyLink = () => void copyText(joinLink).then(copied => { if (copied) flash('Student link copied. Paste it wherever your students will see it.'); });
   const set = (name: 'free' | 'soundOff' | 'secretNames', on: boolean) => void api('setting', { name, on });
 
   return <div className="teacher">
     <header className="t-top">
       <strong className="t-logo">💬 HelloChat <small>Teacher</small></strong>
       {status.open ? <>
-        <button type="button" className="t-pin" title="Click to copy the link for students" onClick={() => { void navigator.clipboard?.writeText(joinLink).then(() => flash('Join link copied.')); }}>
+        <button type="button" className="t-pin" title="Click to copy the link for students" onClick={copyLink}>
           <small>Class PIN</small><b>{status.pin}</b>
         </button>
+        <button type="button" className="btn btn-sm btn-primary" title={joinLink} onClick={copyLink}>🔗 Copy student link</button>
         <span className="t-count">👥 {online.length} here</span>
         <label className="t-toggle" title="When no activity is running, students choose their own games"><input type="checkbox" checked={status.free} onChange={event => set('free', event.target.checked)} /> Free play</label>
         <label className="t-toggle" title="Messages are read aloud in each student’s voice. Headphones recommended."><input type="checkbox" checked={!status.soundOff} onChange={event => set('soundOff', !event.target.checked)} /> Sound</label>
@@ -308,7 +325,15 @@ export default function Teacher() {
         </section>}
         <section className="t-tables">
           <h3>Tables <small>{status.tables.length ? 'click a table to read everything and write to it' : ''}</small></h3>
-          {!status.tables.length && <p className="card t-empty">{online.length ? (status.free ? 'Nobody is playing yet. Students can choose a game, or you can start an activity for everyone.' : 'Free play is off: students wait for you to start an activity.') : 'No students yet. Write the PIN on the board!'}</p>}
+          {!status.tables.length && (online.length
+            ? <p className="card t-empty">{status.free ? 'Nobody is playing yet. Students can choose a game, or you can start an activity for everyone.' : 'Free play is off: students wait for you to start an activity.'}</p>
+            : <div className="card t-empty">
+              <p>No students yet. Write the PIN on the board, or share this link: it opens the game with the PIN already filled in.</p>
+              <div className="t-share">
+                <input className="input-field" readOnly value={joinLink} aria-label="Link for students" onFocus={event => event.currentTarget.select()} />
+                <button type="button" className="btn btn-primary" onClick={copyLink}>🔗 Copy</button>
+              </div>
+            </div>)}
           <div className="t-table-grid">
             {status.tables.map(item => <button key={item.id} type="button" className={`card t-table${item.over ? ' over' : ''}${now - item.lastTs > 90_000 && !item.over ? ' silent' : ''}`} onClick={() => setOpenTable(item.id)}>
               <header><span>{item.icon} {item.title}</span><small>{item.messages} msgs · {ago(item.lastTs, now)}</small></header>
