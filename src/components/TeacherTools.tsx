@@ -56,8 +56,12 @@ export function StudentDrawer({ student, api, flash, onClose }: Common & { stude
   const act = (path: string, body: unknown) => api(path, body).catch(cause => flash(errorText(cause)));
   return <div className="overlay" onClick={onClose}><aside className="card t-drawer" role="dialog" aria-modal="true" aria-label={`${student.name}'s details`} onClick={e => e.stopPropagation()}>
     <header><h2>{student.name}</h2><button className="btn" onClick={onClose}>Close</button></header>
-    <p>{student.real} · {student.messages} messages · {student.words} words · {student.xp} XP · {student.tabSwitches} tab switches</p>
-    <p className="muted">Tab switches count when the page becomes hidden; they do not show what the student opened.</p>
+    <p>{student.real} · {student.messages} messages · {student.words} words · {student.xp} XP</p>
+    {(student.away || student.tabSwitches > 0) && <p className="t-tab-line">
+      {student.away && <span className="t-tab-badge now">⚠️ Left the page right now</span>}
+      {student.tabSwitches > 0 && <span className="t-tab-badge">⚠️ Left the page {student.tabSwitches}×</span>}
+    </p>}
+    <p className="muted">Leaving the page counts when the student switches to another tab or app, or minimises the window. It does not show what they opened.</p>
     <div className="modal-actions"><button className="btn" onClick={() => void act('mute', { key: student.key, on: !student.muted })}>{student.muted ? 'Let them chat' : 'Pause their chat'}</button><button className="btn" onClick={() => void act('sound', { key: student.key, off: !student.soundOff })}>{student.soundOff ? 'Give sound back' : 'Turn sound off'}</button><button className="btn" onClick={() => setEditing(!editing)}>Edit name or character</button></div>
     {editing && <div><label>Name<input className="input-field" value={name} maxLength={60} onChange={e => setName(e.target.value)} /></label><AvatarEditor mode="teacher" initialConfig={student.look} busy={busy} onCancel={() => setEditing(false)} onSave={look => {
       setBusy(true); void api('student', { key: student.key, name, look }).then(() => setEditing(false)).catch(cause => flash(errorText(cause))).finally(() => setBusy(false));

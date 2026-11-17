@@ -10,6 +10,12 @@
 .level-bar { width: 80px; height: 10px; background: #e8eaf6; border-radius: 99px; overflow: hidden; }
 .level-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ffd34d, #ffb020); border-radius: 99px; transition: width .5s; }
 .level-gain { position: absolute; right: 6px; top: -6px; color: #b87400; font-weight: 800; animation: float-up 1.6s forwards; pointer-events: none; }
+.tab-badge { background: var(--gold-soft); border: 2px solid var(--gold); color: #7a5200; border-radius: 999px; padding: .1rem .6rem; font-weight: 800; font-size: .85rem; white-space: nowrap; }
+.away-card { z-index: 80; }
+.away-card .modal { max-width: 400px; align-items: center; text-align: center; }
+.away-icon { font-size: 2.6rem; line-height: 1; }
+.away-count { background: var(--gold-soft); border-radius: 10px; padding: .4rem .8rem; font-weight: 700; }
+.away-count b { font-size: 1.2rem; color: #7a5200; }
 .offline { background: var(--gold-soft); color: #7a5200; font-weight: 800; text-align: center; padding: .35rem; }
 
 /* Lounge */

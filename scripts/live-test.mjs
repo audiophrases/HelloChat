@@ -160,8 +160,15 @@ async function main() {
     assert.equal((await teacher('heard?q=more%20fun')).plays[0]?.key, ben.me.key);
     ana.send({ t: 'tab', hidden: true }); ana.send({ t: 'tab', hidden: true });
     await sleep(100);
-    assert.equal((await teacher('status')).students.find(student => student.key === ana.me.key).tabSwitches, 1);
+    const awayAna = (await teacher('status')).students.find(student => student.key === ana.me.key);
+    assert.equal(awayAna.tabSwitches, 1);
+    assert.equal(awayAna.away, true, 'the teacher sees Ana away right now');
+    assert.ok(awayAna.awaySince > 0);
+    await ana.until(() => ana.events.some(event => event.t === 'tabs' && event.count === 1), 'her own count of leaving the page');
     ana.send({ t: 'tab', hidden: false });
+    await sleep(100);
+    const backAna = (await teacher('status')).students.find(student => student.key === ana.me.key);
+    assert.equal(backAna.away, false); assert.equal(backAna.awaySince, null); assert.equal(backAna.tabSwitches, 1);
     ana.send({ t: 'attempt', text: 'draftonlyword', reason: 'English check' });
     await sleep(100);
     assert.equal((await teacher(`history?key=${ana.me.key}&q=draftonlyword`)).lines[0]?.status, 'draft');

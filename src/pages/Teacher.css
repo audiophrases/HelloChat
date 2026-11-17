@@ -88,6 +88,13 @@
 .t-student-name { flex: 1; font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .t-student-name small { font-weight: 600; color: var(--ink-soft); }
 .t-student-stats { font-size: .78rem; font-weight: 700; color: var(--ink-soft); white-space: nowrap; }
+/* Left the page: amber, as in Pixel Plaza. "now" pulses while the student is on another tab or app. */
+.t-student.tab-away { background: #fffbeb; box-shadow: inset 0 0 0 2px #f59e0b; }
+.t-table-members span.tab-away { background: #fef3c7; box-shadow: 0 0 0 2px #f59e0b; }
+.t-tab-badge { background: rgba(245, 158, 11, .18); color: #92400e; border: 1px solid rgba(245, 158, 11, .5); border-radius: 99px; padding: 0 .4rem; font-size: .72rem; font-weight: 800; white-space: nowrap; }
+.t-tab-badge.now { background: #f59e0b; color: #1f2937; border-color: #f59e0b; animation: t-away-pulse 2s ease-in-out infinite; }
+.t-tab-line { display: flex; gap: .4rem; flex-wrap: wrap; }
+@keyframes t-away-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, .5); } 50% { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0); } }
 .t-chip { background: var(--gold-soft); border-radius: 99px; padding: 0 .4rem; font-size: .72rem; font-weight: 800; }
 
 .t-drawer { width: min(640px, 100%); max-height: 92vh; padding: 1rem; display: flex; flex-direction: column; gap: .5rem; }

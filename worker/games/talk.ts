@@ -150,6 +150,9 @@ export const pingpong: Game<Ping> = {
 
 type Potato = Base & { holder: string; lives: Record<string, number>; topic: string; emoji: string; ask: string[]; asked: string[]; booms: number; of: number; phase: 'play' | 'boom'; lost: string | null };
 const fuse = (ctx: Ctx) => ctx.now + 35_000 + Math.floor(ctx.rnd() * 30_000);
+// Whoever catches the potato always has this long to write a question: it never goes off sooner.
+export const POTATO_HOLD_MS = 20_000;
+const hold = (s: Potato, ctx: Ctx) => { if (s.due !== null) s.due = Math.max(s.due, ctx.now + POTATO_HOLD_MS); };
 
 export const hotpotato: Game<Potato> = {
     id: 'hotpotato', kind: 'warmup', title: 'Hot Potato', icon: '🥔', min: 2, max: 4, ideal: 3, minutes: 5, levels: ['A1', 'A2', 'B1'],
@@ -168,6 +171,7 @@ export const hotpotato: Game<Potato> = {
         s.asked.push(key);
         star(s, from);
         s.holder = after(ctx, from);
+        hold(s, ctx);
         return { fx: [{ to: s.holder, kind: 'turn' }] };
     },
     act: () => ({}),
@@ -194,7 +198,7 @@ export const hotpotato: Game<Potato> = {
         return out;
     },
     join(s, _ctx, key) { s.lives[key] = 3; return {}; },
-    leave(s, ctx) { if (!has(ctx, s.holder)) s.holder = ctx.players[0]?.key ?? ''; return {}; },
+    leave(s, ctx) { if (!has(ctx, s.holder)) { s.holder = ctx.players[0]?.key ?? ''; if (s.phase === 'play') hold(s, ctx); } return {}; },
     view(s, ctx, me) {
         const mine = s.holder === me;
         const holder = nameOf(ctx, s.holder);

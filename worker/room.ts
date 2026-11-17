@@ -676,6 +676,7 @@ export class ChatRoom extends DurableObject<Env> {
         if (before && [...before].some(([student, name]) => names.get(student) !== name)) this.renameEveryone();
         else this.toAll({ t: 'names', names: this.wordList() });
         this.sendControls(key);
+        this.sendTabs(key);
         this.sendPrivate(key);
         this.place(key);
         this.refreshLounges();
@@ -966,7 +967,12 @@ export class ChatRoom extends DurableObject<Env> {
         if (row?.hidden === Number(hidden)) return;
         const count = hidden && (!row || Date.now() - row.ts >= 1000) ? 1 : 0;
         this.sql.exec('INSERT INTO tab_events VALUES (?, ?, ?, ?, ?) ON CONFLICT(lesson, student_key) DO UPDATE SET count = count + excluded.count, hidden = excluded.hidden, ts = excluded.ts', this.lesson(), key, count, Number(hidden), Date.now());
+        if (count) this.sendTabs(key);
     }
+    private tabRow(key: string) {
+        return this.sql.exec<{ count: number; hidden: number; ts: number }>('SELECT count, hidden, ts FROM tab_events WHERE lesson = ? AND student_key = ?', this.lesson(), key).toArray()[0];
+    }
+    private sendTabs(key: string): void { this.send(key, { t: 'tabs', count: this.tabRow(key)?.count ?? 0 }); }
     private played(key: string, id: unknown): void {
         if (typeof id !== 'string' || !this.throttle(key, 'played', 250) || !this.speechMessage(key, id)) return;
         this.sql.exec('INSERT INTO playbacks VALUES (?, ?, ?, ?, ?)', crypto.randomUUID(), Date.now(), this.lesson(), key, id);
@@ -1194,11 +1200,14 @@ export class ChatRoom extends DurableObject<Env> {
             'SELECT student_key, messages, words, stars, blocked, last_ts FROM stats WHERE lesson = ?', lesson).toArray().map(row => [row.student_key, row]));
         const mutes = new Set(this.sql.exec<{ student_key: string }>('SELECT student_key FROM mutes').toArray().map(row => row.student_key));
         const silenced = new Set(this.sql.exec<{ student_key: string }>('SELECT student_key FROM sound_off').toArray().map(row => row.student_key));
+        const tabs = new Map(this.sql.exec<{ student_key: string; count: number; hidden: number; ts: number }>(
+            'SELECT student_key, count, hidden, ts FROM tab_events WHERE lesson = ?', lesson).toArray().map(row => [row.student_key, row]));
         const students: TeacherStudent[] = [...names].map(([key, name]) => {
             const person = this.person(key); const stat = stats.get(key);
-            return { key, name, real: person.real, look: person.look, online: this.online(key), table: this.seatOf.get(key) ?? null,
+            const online = this.online(key); const tab = tabs.get(key); const away = online && tab?.hidden === 1;
+            return { key, name, real: person.real, look: person.look, online, table: this.seatOf.get(key) ?? null,
                 messages: stat?.messages ?? 0, words: stat?.words ?? 0, stars: stat?.stars ?? 0, xp: person.xp, muted: mutes.has(key), soundOff: silenced.has(key),
-                tabSwitches: this.sql.exec<{ count: number }>('SELECT count FROM tab_events WHERE lesson = ? AND student_key = ?', lesson, key).toArray()[0]?.count ?? 0,
+                tabSwitches: tab?.count ?? 0, away, awaySince: away ? tab!.ts : null,
                 lastTs: stat?.last_ts ?? 0, blocked: stat?.blocked ?? 0 };
         }).sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
         const tables: TeacherTable[] = [...this.tables.values()].sort((a, b) => a.started - b.started).map(table => {

@@ -249,6 +249,7 @@ export default function Teacher() {
   if (!token) return <SignIn onToken={(value, notice) => { storeToken(value); setToken(value); if (notice) flash(notice); }} />;
   if (!status) return <p style={{ padding: '2rem' }}>Loading…</p>;
   const online = status.students.filter(item => item.online);
+  const awayNow = new Set(status.students.filter(item => item.away).map(item => item.key));
   const joinLink = makeJoinLink(status.laptop?.signInUrl ?? window.location.origin, status.pin ?? '');
   const copyLink = () => void copyText(joinLink).then(copied => { if (copied) flash('Student link copied. Paste it wherever your students will see it.'); });
   const set = (name: 'free' | 'soundOff' | 'secretNames', on: boolean) => void api('setting', { name, on });
@@ -337,7 +338,8 @@ export default function Teacher() {
           <div className="t-table-grid">
             {status.tables.map(item => <button key={item.id} type="button" className={`card t-table${item.over ? ' over' : ''}${now - item.lastTs > 90_000 && !item.over ? ' silent' : ''}`} onClick={() => setOpenTable(item.id)}>
               <header><span>{item.icon} {item.title}</span><small>{item.messages} msgs · {ago(item.lastTs, now)}</small></header>
-              <div className="t-table-members">{item.members.map(member => <span key={member.key} className={member.here ? '' : 'away'}>{member.name} <small>⭐{member.stars} · {member.messages}</small></span>)}</div>
+              <div className="t-table-members">{item.members.map(member => <span key={member.key} className={`${member.here ? '' : 'away'}${awayNow.has(member.key) ? ' tab-away' : ''}`}
+                title={awayNow.has(member.key) ? 'On another tab or app right now' : undefined}>{awayNow.has(member.key) ? '⚠️ ' : ''}{member.name} <small>⭐{member.stars} · {member.messages}</small></span>)}</div>
               <p className="t-table-status">{item.over ? 'Finished' : item.status}</p>
               <div className="t-table-last">{item.last.map((line, index) => <p key={index}><b>{line.from === 'sys' ? '🎲' : line.name}</b> {line.text}</p>)}</div>
             </button>)}
@@ -347,10 +349,13 @@ export default function Teacher() {
 
       <aside className="t-col t-students card">
         <h3>Students <small>{online.length} of {status.students.length}</small></h3>
-        {status.students.map(item => <button key={item.key} type="button" className={`t-student${item.online ? '' : ' away'}`} onClick={() => setOpenStudent(item.key)}>
+        {status.students.map(item => <button key={item.key} type="button" className={`t-student${item.online ? '' : ' away'}${item.away ? ' tab-away' : ''}`} onClick={() => setOpenStudent(item.key)}
+          title={item.away ? `On another tab or app right now. Left the page ${item.tabSwitches} ${item.tabSwitches === 1 ? 'time' : 'times'} this lesson.` : item.tabSwitches ? `Left the page ${item.tabSwitches} ${item.tabSwitches === 1 ? 'time' : 'times'} this lesson.` : undefined}>
           <Face player={item.look} name={item.name} />
           <span className="t-student-name">{item.name}{status.secretNames ? <small> {item.real}</small> : ''}{item.muted ? ' 🤐' : ''}{item.soundOff ? ' 🔇' : ''}</span>
-          <span className="t-student-stats" title="Messages this lesson, and stars">{item.messages} 💬 · ⭐{item.stars} · ↗{item.tabSwitches}</span>
+          <span className="t-student-stats" title="Messages this lesson, and stars">{item.messages} 💬 · ⭐{item.stars}</span>
+          {item.away ? <span className="t-tab-badge now">⚠️ Away {clock(now - (item.awaySince ?? now))}</span>
+            : item.tabSwitches > 0 && <span className="t-tab-badge">⚠️ {item.tabSwitches}×</span>}
           {item.online && !item.table && <span className="t-chip">free</span>}
         </button>)}
         {!status.students.length && <p className="muted">Nobody has joined yet.</p>}

@@ -309,6 +309,7 @@ function Playing({ room, entry, onExit }: { room: Room; entry: Entry; onExit: ()
         <b style={{ color: NAME_COLOURS[me.style.colour] }}>{me.style.flair ? `${me.style.flair} ` : ''}{me.name}</b>
       </span>
       <LevelPill me={me} gain={state.gain} onOpen={() => setLooks(true)} />
+      {state.tabLeaves > 0 && <span className="tab-badge" title="Each time you leave this page, your teacher can see it.">⚠️<span className="hide-small"> Left the page</span> {state.tabLeaves}×</span>}
       <span className="topbar-space" />
       {audio && <button type="button" className="btn btn-sm" disabled={state.soundOff} title={state.soundOff ? 'Your teacher turned the sound off' : 'Sound'}
         onClick={() => (sound?.needsInteraction ? unlockSound() : audio.setMuted(!sound?.muted))}>{state.soundOff ? '🔒' : sound?.muted ? '🔇' : '🔊'}<span className="hide-small"> {state.soundOff || sound?.muted ? 'Sound off' : sound?.needsInteraction ? 'Tap for sound' : 'Sound on'}</span></button>}
@@ -331,5 +332,14 @@ function Playing({ room, entry, onExit }: { room: Room; entry: Entry; onExit: ()
     {looks && <Looks me={me} room={room} onClose={() => setLooks(false)} />}
     {privateChat && <PrivateChat room={room} onClose={() => setPrivateChat(false)} />}
     {help && <StudentHelp room={room} onClose={() => setHelp(false)} />}
+    {state.tabAway && <div className="overlay away-card" onClick={room.resume}>
+      <div className="card modal" role="dialog" aria-modal="true" aria-labelledby="away-title" onClick={event => event.stopPropagation()}>
+        <span className="away-icon" aria-hidden="true">⚠️</span>
+        <h2 id="away-title">You left the game</h2>
+        <p>Your teacher can see when you leave this page.</p>
+        {state.tabLeaves > 0 && <p className="away-count">You have left <b>{state.tabLeaves}</b> {state.tabLeaves === 1 ? 'time' : 'times'} this lesson.</p>}
+        <button type="button" className="btn btn-go btn-lg" onClick={room.resume}>Back to the game</button>
+      </div>
+    </div>}
   </div>;
 }

@@ -26,7 +26,7 @@ The complaint about Pixel Plaza was that instructions were complicated. HelloCha
 | 🕵️ | Who Am I? | 2–4 | A secret animal or thing; yes/no questions find a classmate's. |
 | 🪞 | Same or Different? | 2–3 | Describe a secret picture without naming it. Same picture or not? |
 | 🔟 | Name 10! | 2–4 | A list race: ten things in a kitchen, one in each message. |
-| 🥔 | Hot Potato | 2–4 | Ask a question to pass the potato before it goes off. |
+| 🥔 | Hot Potato | 2–4 | Ask a question to pass the potato before it goes off. Whoever catches it has at least 20 seconds. |
 | 📖 | Emoji Story | 2–4 | One secret sentence from three pictures; vote for the best. |
 | 🎲 | Question Trail | 2–4 | Roll, answer the square's question, take a follow-up question. |
 | 🚫 | Don't Say It! | 2–4 | Describe a word without the forbidden words; the table guesses. |
@@ -76,7 +76,8 @@ Teachers can also star an individual chat message for +5 XP, once per message. W
 - **Blocked words**: lesson-specific words and phrases, including disguised spellings. Blocking a phrase removes matching chat messages already posted. Repeated phrases from several students prompt an offer to block or leave them alone; ordinary task vocabulary is excluded. A new lesson clears the active list and offers to reuse the previous one.
 - **Student drawer**: click a student to pause chat, silence sound, edit their name or character, read their private teacher thread, and search conversations and submitted attempts across lessons. Browser-stopped drafts are labelled separately; unsent typing is not recorded. Use **Search message history** for the whole class, with older results available through pagination.
 - **Teacher chat**: students can reply privately from the top bar, including while in the lounge. Help requests remain available in any language even when chat is paused.
-- **Heard something?**: search device-reported playback from the last 15 minutes and silence the device. Tab-switch counts report when the page becomes hidden, not what was opened elsewhere.
+- **Heard something?**: search device-reported playback from the last 15 minutes and silence the device.
+- **Left the page** (as in Pixel Plaza): switching to another tab or app, or minimising the window, is counted for the lesson. The student list shows a pulsing **⚠️ Away 0:42** while a student is gone (also on their table's card) and **⚠️ 3×** afterwards; the student drawer says the same. The student sees a "You left the game" card, a reminder when they come back and a **⚠️ Left the page 3×** badge. Reloading the page does not count. It never shows what was opened elsewhere.
 - **Commands**: Ctrl+K (Cmd+K on Mac) finds students, tables, and common controls.
 - **Saved classes**: close the class, then switch or create a named class. Progress, student edits, histories and settings are saved automatically on switching. One class can be open at a time; these saves do not resume a live round.
 - **Free language hint**: under Help, students get one AI sentence starter per lesson. Failed requests preserve the allowance. Hints require a successful safety check and never replace the teacher-help button.

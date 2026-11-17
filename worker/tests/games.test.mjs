@@ -177,3 +177,22 @@ test('quests: every checked answer can be given, and ids are unique', () => {
 test('every topic has questions at every level', () => {
     for (const topic of TOPICS) for (const level of ['A1', 'A2', 'B1']) assert.ok(topic.q[level].length >= 8, `${topic.id} ${level}`);
 });
+
+test('hot potato: whoever catches the potato has at least 20 seconds', () => {
+    const game = gameById('hotpotato');
+    const players = people(3);
+    let now = 1_000_000;
+    const ctx = () => ({ now, rnd: random(7), players, opts: { level: 'A1', topic: 'mix', custom: [], endless: false } });
+    const s = game.create(ctx());
+    // Pass the potato just before it would go off: the new holder still gets 20 seconds.
+    now = s.due - 1000;
+    const first = s.holder;
+    game.chat(s, ctx(), first, 'What is your favourite food?');
+    assert.notEqual(s.holder, first);
+    assert.ok(s.due >= now + 20_000, 'the fuse waits for the new holder');
+    // A pass early in the round leaves the hidden fuse alone.
+    const fresh = game.create(ctx());
+    const due = fresh.due;
+    game.chat(fresh, ctx(), fresh.holder, 'Do you like pizza?');
+    assert.equal(fresh.due, due);
+});

@@ -24,6 +24,8 @@ export type RoomState = {
   soundOff: boolean;
   muted: boolean;
   gain: { amount: number; at: number } | null;
+  tabAway: boolean;                 // on another tab or app right now
+  tabLeaves: number;                // times this lesson, as the server counted them (the teacher sees the same number)
 };
 
 export type GrammarHint = { ok: true } | { ok: false; corrected: string; why: string };
@@ -39,7 +41,7 @@ const HINT_WAIT_MS = 3500;
 class Refused extends Error {}
 
 export class Room {
-  state: RoomState = { blocked: [], privateLines: [], hintUsed: false, languageHint: '', status: 'connecting', me: null, names: [], hints: false, lounge: null, table: null, arrival: null, leftWhy: null, typing: {}, notices: [], soundOff: false, muted: false, gain: null };
+  state: RoomState = { blocked: [], privateLines: [], hintUsed: false, languageHint: '', status: 'connecting', me: null, names: [], hints: false, lounge: null, table: null, arrival: null, leftWhy: null, typing: {}, notices: [], soundOff: false, muted: false, gain: null, tabAway: false, tabLeaves: 0 };
   private pin: string;
   private token: string;
   private avatar: Look | null;
@@ -47,6 +49,8 @@ export class Room {
   private events = new Set<(message: ServerMessage) => void>();
   private ws: WebSocket | null = null;
   private opening = false;
+  private leaving = false;          // the page is reloading or closing: that is not leaving the game
+  private blurTimer = 0;
   private done = false;
   private fails = 0;
   private pingTimer = 0;
@@ -58,8 +62,12 @@ export class Room {
   // A null avatar keeps the one saved on the server.
   constructor(pin: string, token: string, avatar: Look | null) {
     this.pin = pin; this.token = token; this.avatar = avatar;
-    document.addEventListener('visibilitychange', this.wake);
+    document.addEventListener('visibilitychange', this.visibility);
     window.addEventListener('online', this.wake);
+    window.addEventListener('blur', this.blur);
+    window.addEventListener('focus', this.focus);
+    window.addEventListener('pagehide', this.pageHide);
+    window.addEventListener('pageshow', this.pageShow);
     void this.open();
   }
 
@@ -115,15 +123,43 @@ export class Room {
 
   stop(): void {
     this.done = true;
-    document.removeEventListener('visibilitychange', this.wake);
+    document.removeEventListener('visibilitychange', this.visibility);
     window.removeEventListener('online', this.wake);
+    window.removeEventListener('blur', this.blur);
+    window.removeEventListener('focus', this.focus);
+    window.removeEventListener('pagehide', this.pageHide);
+    window.removeEventListener('pageshow', this.pageShow);
+    window.clearTimeout(this.blurTimer);
     window.clearInterval(this.pingTimer); window.clearTimeout(this.pongTimer); window.clearTimeout(this.retryTimer);
     try { this.ws?.close(1000); } catch { /* already closed */ }
   }
 
+  // Leaving the page, as in Pixel Plaza: another tab, another app or a minimised window. The teacher sees it live.
+  private away(away: boolean): void {
+    if (this.done || this.state.tabAway === away) return;
+    this.set({ tabAway: away });
+    this.send({ t: 'tab', hidden: away });
+    if (!away) this.notice('warning', '⚠️ You left the game. Your teacher can see when you leave this page.');
+  }
+  // Back from the "you left" card: only when the page really has the student's attention again.
+  resume = (): void => { window.focus(); if (!this.leaving && document.visibilityState !== 'hidden' && document.hasFocus()) this.away(false); };
+  private visibility = (): void => {
+    if (this.leaving) return;
+    if (document.visibilityState === 'hidden') this.away(true);
+    else if (document.hasFocus()) this.away(false);
+    this.wake();
+  };
+  // Focus moving inside the page fires blur too; only a page that still has no focus a moment later was left.
+  private blur = (): void => {
+    window.clearTimeout(this.blurTimer);
+    this.blurTimer = window.setTimeout(() => { if (!this.leaving && !document.hasFocus()) this.away(true); }, 0);
+  };
+  private focus = (): void => { if (!this.leaving && document.visibilityState !== 'hidden') this.away(false); };
+  private pageHide = (): void => { this.leaving = true; window.clearTimeout(this.blurTimer); };
+  private pageShow = (): void => { this.leaving = false; this.visibility(); };
+
   private wake = (): void => {
     if (this.done) return;
-    this.send({ t: 'tab', hidden: document.visibilityState === 'hidden' });
     if (document.visibilityState === 'hidden') return;
     if (!this.ws || this.ws.readyState > WebSocket.OPEN) { window.clearTimeout(this.retryTimer); void this.open(); }
     else this.ping();
@@ -215,7 +251,11 @@ export class Room {
       case 'controls': this.set({ blocked: message.blocked, hintUsed: message.hintUsed }); break;
       case 'private': this.set({ privateLines: message.lines }); break;
       case 'languageHint': this.set({ languageHint: message.text, hintUsed: message.used }); break;
-      case 'welcome': this.set({ status: 'online', me: message.me, names: message.names, soundOff: message.soundOff, muted: message.muted, hints: message.hints }); break;
+      case 'welcome':
+        this.set({ status: 'online', me: message.me, names: message.names, soundOff: message.soundOff, muted: message.muted, hints: message.hints });
+        this.send({ t: 'tab', hidden: this.state.tabAway }); // where the student is now, after a reconnection
+        break;
+      case 'tabs': this.set({ tabLeaves: message.count }); break;
       case 'me': this.set({ me: message.me }); break;
       case 'names': this.set({ names: message.names }); break;
       case 'lounge': this.set({ lounge: message.lounge }); break;

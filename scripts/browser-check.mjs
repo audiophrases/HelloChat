@@ -123,6 +123,22 @@ async function main() {
     await ana.shot('07-wyr-talk');
     await teacher.until(`document.querySelector('.t-table')`, 'a table on the teacher page');
     await teacher.shot('08-teacher-free-play');
+
+    // Leaving the page, as in Pixel Plaza. Headless tabs never really lose focus, so the page is told it did.
+    await ana.run(`document.hasFocus = () => false; window.dispatchEvent(new Event('blur'));`);
+    await ana.until(`document.querySelector('.away-card') && document.querySelector('.tab-badge')`, 'the "you left" card and badge');
+    await ana.shot('07b-left-the-page');
+    await teacher.until(`document.querySelector('.t-student.tab-away .t-tab-badge.now') && document.querySelector('.t-table-members .tab-away')`, 'Ana away on the teacher page');
+    await teacher.shot('08b-teacher-student-away');
+    await ana.run(`delete document.hasFocus; window.dispatchEvent(new Event('focus'));`);
+    await ana.until(`!document.querySelector('.away-card') && document.body.innerText.includes('Your teacher can see when you leave')`, 'the card closing with a reminder');
+    await sleep(1100);
+    await ana.run(`Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange'));`);
+    await teacher.until(`document.querySelector('.t-student.tab-away')`, 'Ana away again after switching tabs');
+    await ana.run(`delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'));`);
+    await teacher.until(`!document.querySelector('.t-student.tab-away') && [...document.querySelectorAll('.t-tab-badge')].some(badge => badge.innerText.includes('2×'))`, 'two leaves counted');
+    await ana.until(`document.querySelector('.tab-badge')?.innerText.includes('2×')`, 'her badge showing 2×');
+
     await teacher.run(`document.querySelector('.t-table').click();`);
     await teacher.until(`document.querySelector('.t-transcript .t-line')`, 'the transcript');
     await teacher.shot('09-teacher-table');

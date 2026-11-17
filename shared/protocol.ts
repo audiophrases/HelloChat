@@ -118,6 +118,7 @@ export type ServerMessage =
     | { t: 'me'; me: Me }
     | { t: 'sound'; off: boolean }
     | { t: 'muted'; muted: boolean }
+    | { t: 'tabs'; count: number }                                   // how many times you left the page this lesson
     | { t: 'names'; names: string[] }
     | { t: 'bye'; why: 'replaced' | 'closed' };   // sent just before the server closes the connection
 
@@ -149,7 +150,9 @@ export type TeacherTable = {
 };
 
 export type TeacherStudent = {
-    tabSwitches: number;
+    tabSwitches: number;     // times they left the page (another tab or app) this lesson
+    away: boolean;           // on another tab or app right now
+    awaySince: number | null;
     key: string; name: string; real: string; look: Look; online: boolean; table: string | null;
     messages: number; words: number; stars: number; xp: number; muted: boolean; soundOff: boolean; lastTs: number; blocked: number;
 };
