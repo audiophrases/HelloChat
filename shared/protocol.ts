@@ -178,8 +178,13 @@ export type TeacherStatus = {
     students: TeacherStudent[]; tables: TeacherTable[]; alerts: TeacherAlert[]; reports: TeacherReport[];
     waiting: string[];       // names of students with no table yet
     custom: string;          // the teacher's own questions, one per line
+    allowed: string[];       // names and words the teacher allowed past the English check, for every class
+    stopped: StoppedWord[];  // words the English check stopped this lesson, most students first
     laptop?: { url: string; signInUrl: string } | null; notice?: string;
 };
+
+// A word the English check stopped, for the teacher to allow if it is a name, a title or a place.
+export type StoppedWord = { word: string; count: number; names: string[]; example: string };
 
 export type StartOptions = { game: string; level: Level; size: number; rounds: number; minutes: number; topic: string };
 

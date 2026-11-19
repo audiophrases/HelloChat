@@ -125,6 +125,8 @@ function teacherAction(path: string, method: string, body: any): TeacherAction |
         case '/api/teacher/setting': return ['free', 'soundOff', 'secretNames'].includes(body?.name) && typeof body?.on === 'boolean' ? { kind: 'setting', name: body.name, on: body.on } : null;
         case '/api/teacher/level': return LEVELS.includes(body?.level) ? { kind: 'level', level: body.level } : null;
         case '/api/teacher/custom': return text(body?.text, 12_000) ? { kind: 'custom', text: body.text } : null;
+        case '/api/teacher/allow-words': return Array.isArray(body?.words) && body.words.length <= 50 && body.words.every((word: unknown) => text(word, 60)) ? { kind: 'allowWords', words: body.words } : null;
+        case '/api/teacher/unallow-word': return text(body?.word, 60) ? { kind: 'unallowWord', word: body.word } : null;
         case '/api/teacher/game-settings': {
             const game = text(body?.game, 40) ? gameById(body.game) : undefined;
             const values = body?.values;

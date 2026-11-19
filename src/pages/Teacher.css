@@ -121,6 +121,15 @@
 .t-tools details > :not(summary) { margin-top: .6rem; }
 .t-tools .t-say textarea { flex: 1; min-width: 0; }
 
+/* Allowed names and words. */
+.t-allow-title { font-size: .9rem; margin-top: .8rem; }
+.t-stopped { list-style: none; display: flex; flex-direction: column; gap: .3rem; max-height: 40vh; overflow-y: auto; }
+.t-stopped li { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .35rem .5rem; border-radius: 10px; background: #f7f8fd; }
+.t-stopped li span { min-width: 0; overflow-wrap: anywhere; }
+.t-allowed { display: flex; flex-wrap: wrap; gap: .35rem; }
+.t-allowed .t-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .3rem .2rem .6rem; border-radius: 999px; background: var(--go-soft); font-weight: 700; font-size: .85rem; }
+.t-allowed .t-chip button { border: 0; background: none; color: var(--ink-soft); font-size: .8rem; padding: 0 .2rem; }
+
 /* Game times and rules: one row for each setting. */
 .t-setting-game { font-weight: 800; }
 .t-setting-game select { border: 2px solid var(--line); border-radius: 8px; padding: .2rem .4rem; background: #fff; font-weight: 700; }

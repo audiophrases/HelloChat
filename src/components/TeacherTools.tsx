@@ -175,6 +175,35 @@ export function GameSettingsForm({ game, level, api, flash }: Common & { game: G
   </form>;
 }
 
+// ---------- Allowed words ----------
+
+// Names, titles and places the English check stops: the teacher sees which ones came up and lets them through.
+function AllowedWords({ status, api, flash }: Common & { status: TeacherStatus }) {
+  const [text, setText] = useState('');
+  const allow = (words: string[]) => api('allow-words', { words })
+    .then(() => flash(words.length === 1 ? `“${words[0]}” is allowed now, for every student.` : `${words.length} words are allowed now, for every student.`))
+    .catch(cause => flash(errorText(cause)));
+  return <>
+    <p className="muted">The chat stops words that are not English. Names of films, games, singers, footballers and places are often stopped too: allow the ones you want. Slurs and insults can never be allowed, and every message is still checked for safety.</p>
+    <h4 className="t-allow-title">Stopped this lesson</h4>
+    {status.stopped.length ? <ul className="t-stopped">
+      {status.stopped.map(item => <li key={item.word}>
+        <span><b>{item.word}</b> <small>×{item.count} · {item.names.join(', ')}</small><br /><small className="muted">“{item.example}”</small></span>
+        <button type="button" className="btn btn-sm" onClick={() => void allow([item.word])}>✓ Allow</button>
+      </li>)}
+    </ul> : <p className="muted">Nothing stopped yet this lesson.</p>}
+    <form className="t-say" onSubmit={event => { event.preventDefault(); const words = text.split(/[\n,]+/).map(word => word.trim()).filter(Boolean); if (words.length) void allow(words).then(() => setText('')); }}>
+      <input className="input-field" value={text} maxLength={600} aria-label="Names or words to allow" placeholder="Allow a name or word: Encanto, Valls, Bad Bunny…" onChange={event => setText(event.target.value)} />
+      <button className="btn" disabled={!text.trim()}>Allow</button>
+    </form>
+    {status.allowed.length > 0 && <>
+      <h4 className="t-allow-title">Allowed ({status.allowed.length})</h4>
+      <div className="t-allowed">{status.allowed.map(word => <span key={word} className="t-chip">{word}
+        <button type="button" title={`Stop allowing “${word}”`} aria-label={`Stop allowing ${word}`} onClick={() => void api('unallow-word', { word }).catch(cause => flash(errorText(cause)))}>✕</button></span>)}</div>
+    </>}
+  </>;
+}
+
 function GameSettings({ status, api, flash }: Common & { status: TeacherStatus }) {
   const [picked, setPicked] = useState(status.games[0]?.id ?? '');
   const game = status.games.find(item => item.id === picked) ?? status.games[0];
@@ -218,6 +247,7 @@ export function LessonControls({ status, api, flash }: Common & { status: Teache
     {status.blocked.repeats.map(repeat => <div className="t-repeat" key={repeat.key}><p><b>{repeat.students.length} students are repeating “{repeat.words}”.</b> Block it for this lesson?</p><p className="muted">{repeat.examples.join(' · ')}</p><button className="btn" disabled={!status.open} onClick={() => void act('words', { words: [repeat.words] })}>Block phrase</button> <button className="btn" onClick={() => void act('allow-repeat', repeat)}>Leave it alone</button></div>)}
     <details id="heard-something" onToggle={e => setHeardOpen(e.currentTarget.open)}><summary>Heard something?</summary><p className="muted">Playback reported by students’ devices in the last 15 minutes.</p><input className="input-field" type="search" value={phrase} aria-label="Find a phrase read aloud" placeholder="Type the phrase you heard…" onChange={e => setPhrase(e.target.value)} />{error && <p role="alert">{error}</p>}<div className="t-private">{plays.map(play => <p key={play.id}><q>{play.text}</q> — {play.name} · {new Date(play.ts).toLocaleTimeString()} <button className="btn btn-sm" onClick={() => void act('sound', { key: play.key, off: true })}>Silence device</button></p>)}{!plays.length && <p>No matching playback.</p>}</div></details>
     <details id="message-history" onToggle={e => setHistoryOpen(e.currentTarget.open)}><summary>Search message history</summary>{historyOpen && <History api={api} flash={flash} />}</details>
+    <details id="allowed-words"><summary>Allowed names and words ({status.allowed.length}){status.stopped.length ? ` · ${status.stopped.length} stopped this lesson` : ''}</summary><AllowedWords status={status} api={api} flash={flash} /></details>
     <details id="game-settings"><summary>⏱ Game times and rules{status.games.some(game => changedSettings(game) > 0) ? ` (${status.games.filter(game => changedSettings(game) > 0).length} changed)` : ''}</summary><GameSettings status={status} api={api} flash={flash} /></details>
     <details id="saved-classes"><summary>Classes: {status.classes.find(item => item.id === status.activeClass)?.name}</summary><p className="muted">Each class keeps its PIN and link for good. Progress and history are saved when you switch; close the class first.</p><ClassList status={status} api={api} flash={flash} /></details>
   </section>;

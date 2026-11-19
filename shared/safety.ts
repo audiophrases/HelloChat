@@ -39,6 +39,16 @@ export function slurIn(text: string): string | null {
     return words(text).find(word => SLURS.some(pattern => pattern.test(word))) ?? null;
 }
 
+// Real people whose names are thrown at classmates ("ok Diddy", "jeffrey epstein", "the son of saddam"). They are
+// never a topic in these games, and an AI check sees only a name, so they are stopped here and the teacher is told.
+const NAMED_INSULTS = /^(?:epstein|diddy|pdiddy|hitler|mussolini|stalin|saddam)$/;
+
+// The first such name in a message, as the list read it, or null.
+export function insultIn(text: string): string | null {
+    const found = words(text);
+    return found.find(word => NAMED_INSULTS.test(word)) ?? (/\bbin ?laden\b/.test(found.join(' ')) ? 'bin laden' : null);
+}
+
 // A small classroom backstop, independent of the remote classifier. Explicit
 // sexual terms are stopped outright; ambiguous body words need a sexual action
 // in the same message, so names, animals and ordinary health language still work.
@@ -48,6 +58,7 @@ const SEXUAL_ACTION = /^(?:suck(?:s|ed|ing)?|lick(?:s|ed|ing)?|fuck(?:s|ed|ing)?
 
 export function localHarm(text: string): Harm | null {
     if (slurIn(text)) return 'hate';
+    if (insultIn(text)) return 'harassment';
     const tokens = words(text);
     if (tokens.some(word => EXPLICIT_SEXUAL.test(word))
         || (tokens.some(word => SEXUAL_BODY.test(word)) && tokens.some(word => SEXUAL_ACTION.test(word)))) return 'sexual';

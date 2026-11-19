@@ -17,6 +17,8 @@ import { GAMES, gameById, info } from './games/index.ts';
 import type { Ctx, Game, Opts, Out } from './games/types.ts';
 import { TOPICS } from './content/questions.ts';
 import { harmFrom, localHarm, type Harm } from '../shared/safety.ts';
+import { CHAT_WORDS, HOME_WORDS, TEXT_SPEAK } from '../shared/chatWords.ts';
+import { PROPER_NOUNS } from '../shared/properNouns.ts';
 import { cleanName, shownNames } from '../shared/names.ts';
 import { NAME_ADJECTIVES, NAME_PEOPLE } from '../shared/randomNames.ts';
 import { isEnglishVoice, normalizeVoice, voiceFor } from '../shared/voices.ts';
@@ -24,7 +26,7 @@ import { checkStyle, levelOf, reactionsFor, readStyle, titleFor, unlockedBetween
 import { wordDiff } from '../shared/diff.ts';
 import { tidy } from '../shared/tidy.ts';
 import type {
-    ClientMessage, Level, Line, Look, LoungeInfo, Me, Member, ServerMessage, StartOptions, Style, TableInfo, TeacherAlert, TeacherReport,
+    ClientMessage, Level, Line, Look, LoungeInfo, Me, Member, ServerMessage, StartOptions, StoppedWord, Style, TableInfo, TeacherAlert, TeacherReport,
     TeacherStatus, TeacherStudent, TeacherTable,
 } from '../shared/protocol.ts';
 
@@ -57,6 +59,14 @@ type Session = {
     met: Record<string, string[]>;
 };
 
+// Could this stopped word be a name, a title or a place the teacher might allow?
+function worthAllowing(word: string): boolean {
+    if (word.length < 3 || !/^\p{L}+(?:['’]\p{L}+)*$/u.test(word)) return false;
+    if (TEXT_SPEAK[word] || HOME_WORDS[word] || CHAT_WORDS.has(word) || PROPER_NOUNS.has(word)) return false;
+    if (/(\p{L})\1\1/u.test(word) || !/[aeiouyàáèéíïòóúü]/u.test(word)) return false;   // "yesss", "jbhjd"
+    return !localHarm(word);
+}
+
 export type TeacherAction =
     | { kind: 'words'; words: string[] }
     | { kind: 'unblock'; key: string }
@@ -74,6 +84,7 @@ export type TeacherAction =
     | { kind: 'level'; level: Level }
     | { kind: 'custom'; text: string }
     | { kind: 'gameSettings'; game: string; values: Record<string, number> }
+    | { kind: 'allowWords'; words: string[] } | { kind: 'unallowWord'; word: string }
     | { kind: 'mute'; key: string; on: boolean } | { kind: 'sound'; key: string; off: boolean }
     | { kind: 'remove'; line: string }
     | { kind: 'say'; to: 'all' | 'table' | 'student'; id?: string; text: string }
@@ -693,9 +704,37 @@ export class ChatRoom extends DurableObject<Env> {
         return new Response(null, { status: 101, webSocket: client });
     }
 
-    // Words the English check takes besides the dictionary's: everyone's names, and the made-up people of Guess Who?
+    // Words the English check takes besides the dictionary's: everyone's names, and the made-up people of Guess Who?,
+    // and the names and words the teacher allowed.
     private wordList(): string[] {
-        return [...new Set([...this.names().values()].flatMap(name => name.split(' ')).concat(['HelloChat']))];
+        return [...new Set([...this.names().values()].flatMap(name => name.split(' ')).concat(['HelloChat'], this.allowedWords()))];
+    }
+    // Kept for every class: a film or a footballer is the same in every group.
+    private allowedWords(): string[] { return this.json<string[]>('allowed_words', []); }
+
+    // Words the English check stopped this lesson that might be a name, a title or a place: not text-speak, not a word
+    // from home with an English one, not a slur, not keyboard mashing. Typos stay in the list; the teacher just skips them.
+    private stoppedWords(): StoppedWord[] {
+        const rows = this.sql.exec<{ student_key: string; text: string; note: string }>(
+            `SELECT student_key, text, note FROM chat WHERE lesson = ? AND status IN ('draft', 'blocked')
+             AND (note LIKE 'Browser: English check:%' OR note LIKE 'Use English words only:%' OR note LIKE 'Server: Use English words only:%')
+             ORDER BY ts DESC LIMIT 500`, this.lesson()).toArray();
+        const allowed = new Set(this.allowedWords().flatMap(word => word.toLowerCase().split(/[^\p{L}']+/u)));
+        const names = this.names();
+        const words = new Map<string, { word: string; count: number; students: Set<string>; example: string }>();
+        for (const row of rows) {
+            const list = row.note.replace(/^(?:Browser: English check|(?:Server: )?Use English words only): /, '').replace(/\.$/, '').split(/,\s*/);
+            for (const raw of list) {
+                const word = raw.trim();
+                const key = word.toLowerCase();
+                if (!worthAllowing(key) || allowed.has(key)) continue;
+                const entry = words.get(key) ?? { word, count: 0, students: new Set<string>(), example: row.text.slice(0, 90) };
+                entry.count += 1; entry.students.add(row.student_key);
+                words.set(key, entry);
+            }
+        }
+        return [...words.values()].sort((a, b) => b.students.size - a.students.size || b.count - a.count).slice(0, 20)
+            .map(entry => ({ word: entry.word, count: entry.count, names: [...entry.students].map(key => names.get(key) ?? 'Student'), example: entry.example }));
     }
     private renameEveryone(): void {
         this.toAll({ t: 'names', names: this.wordList() });
@@ -1142,6 +1181,25 @@ export class ChatRoom extends DurableObject<Env> {
                 break;
             case 'level': this.saveSetting('level', action.level); break;
             case 'custom': this.saveSetting('custom', action.text.slice(0, 12_000)); break;
+            case 'allowWords': {
+                const allowed = this.allowedWords();
+                for (const raw of action.words) {
+                    const word = raw.trim().replace(/\s+/g, ' ');
+                    if (!word) continue;
+                    if (word.length > 40 || !/^\p{L}[\p{L}'’ .-]*$/u.test(word)) return fail(`“${word.slice(0, 40)}” cannot be allowed: use letters, up to 40.`);
+                    // Slurs, insults and the class's blocked words are never allowed, whatever the teacher types.
+                    if (chatProblem(word)) return fail(`“${word}” stays blocked: it is not OK in the class chat.`);
+                    if (!allowed.some(item => item.toLowerCase() === word.toLowerCase())) allowed.push(word);
+                }
+                if (allowed.length > 300) return fail('That is a lot of allowed words. Remove some first.');
+                this.saveSetting('allowed_words', JSON.stringify(allowed));
+                this.toAll({ t: 'names', names: this.wordList() });
+                break;
+            }
+            case 'unallowWord':
+                this.saveSetting('allowed_words', JSON.stringify(this.allowedWords().filter(item => item.toLowerCase() !== action.word.trim().toLowerCase())));
+                this.toAll({ t: 'names', names: this.wordList() });
+                break;
             case 'gameSettings': {
                 const tuning = this.tuning();
                 if (Object.keys(action.values).length) tuning[action.game] = action.values; else delete tuning[action.game];
@@ -1268,6 +1326,7 @@ export class ChatRoom extends DurableObject<Env> {
             students, tables, alerts, reports, blocked: this.blockedStatus(), classes: this.classrooms.list(), activeClass: this.classrooms.current(),
             waiting: this.present().filter(key => !this.tableOf(key)).map(key => names.get(key) ?? 'Student'),
             custom: this.setting('custom') ?? '',
+            allowed: this.allowedWords(), stopped: this.stoppedWords(),
         };
     }
 
