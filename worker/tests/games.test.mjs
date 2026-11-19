@@ -45,13 +45,13 @@ function checkView(game, view, players) {
     assert.ok(!JSON.stringify(view).includes('undefined'), `${game.id}: nothing undefined is shown`);
 }
 
-function play(game, count, seed, { endless = false, churn = false, level = 'A2', steps = 6000 } = {}) {
+function play(game, count, seed, { endless = false, churn = false, level = 'A2', steps = 6000, tune } = {}) {
     const rnd = random(seed);
     const bot = random(seed + 99);
     let players = people(count);
     const spare = people(5).slice(count);
     let now = 1_000_000;
-    const ctx = () => ({ now, rnd, players, opts: { level, topic: 'mix', custom: [], endless } });
+    const ctx = () => ({ now, rnd, players, opts: { level, topic: 'mix', custom: [], endless, ...(tune ? { tune } : {}) } });
     const s = game.create(ctx());
     let said = 0;
     for (let step = 0; step < steps && !s.over; step++) {
@@ -196,3 +196,73 @@ test('hot potato: whoever catches the potato has at least 20 seconds', () => {
     game.chat(fresh, ctx(), fresh.holder, 'Do you like pizza?');
     assert.equal(fresh.due, due);
 });
+
+// ---------- The teacher's own times and numbers ----------
+
+const tuned = (game, tune, { level = 'A2', count = game.min } = {}) => {
+    const players = people(count);
+    return { now: 1_000_000, rnd: random(3), players, opts: { level, topic: 'mix', custom: [], endless: false, tune } };
+};
+
+test('every game lists what the teacher can change, with sensible limits', () => {
+    for (const game of GAMES) {
+        assert.ok(game.settings.length > 0, `${game.id} has settings`);
+        assert.equal(new Set(game.settings.map(setting => setting.key)).size, game.settings.length, `${game.id}: keys are unique`);
+        for (const setting of game.settings) {
+            assert.ok(['s', 'min', 'n'].includes(setting.unit));
+            assert.ok(setting.label.length > 3 && setting.label.length <= 70, `${game.id}.${setting.key}: "${setting.label}" fits the panel`);
+            assert.ok(setting.min <= setting.def && setting.def <= setting.max, `${game.id}.${setting.key}: the usual value is allowed`);
+            if (setting.a1 !== undefined) assert.ok(setting.min <= setting.a1 && setting.a1 <= setting.max, `${game.id}.${setting.key}: the A1 value is allowed`);
+        }
+        assert.deepEqual(info(game).settings, undefined, 'students are not sent the settings');
+    }
+});
+
+test('the teacher’s times and numbers change the game, within limits', () => {
+    const emoji = gameById('emojistory');
+    let ctx = tuned(emoji, { write: 20, rounds: 1 });
+    let s = emoji.create(ctx);
+    assert.equal(s.due, ctx.now + 20_000, 'Emoji Story: 20 seconds to write');
+    assert.equal(emoji.view(s, ctx, ctx.players[0].key).timer.total, 20_000, 'the timer bar shows the same 20 seconds');
+    assert.equal(s.of, 1);
+    // Out of range is kept within the limits; anything else falls back to the usual value.
+    ctx = tuned(emoji, { write: 1, rounds: 999 });
+    s = emoji.create(ctx);
+    assert.equal(s.due, ctx.now + 5_000);
+    assert.equal(s.of, 20);
+    ctx = tuned(emoji, { write: 'soon' });
+    assert.equal(emoji.create(ctx).due, ctx.now + 100_000);
+    // An A1 table has its own usual value until the teacher sets one.
+    const speed = gameById('speedchat');
+    assert.equal(speed.create(tuned(speed, undefined, { level: 'A1' })).goal, 2);
+    assert.equal(speed.create(tuned(speed, undefined, { level: 'B1' })).goal, 3);
+    assert.equal(speed.create(tuned(speed, { goal: 5 }, { level: 'A1' })).goal, 5);
+    // Free-play rounds, word counts and hearts.
+    assert.equal(gameById('spotdiff').create(tuned(gameById('spotdiff'), { diffs: 2, hearts: 6 })).diffs.length, 2);
+    assert.equal(gameById('spotdiff').create(tuned(gameById('spotdiff'), { diffs: 2, hearts: 6 })).hearts, 6);
+    const lie = gameById('spotlie');
+    ctx = tuned(lie, { words: 8 });
+    s = lie.create(ctx);
+    assert.ok(lie.chat(s, ctx, s.teller, 'I have two big dogs').block?.includes('8 words'), 'Spot the Lie asks for 8 words');
+});
+
+test('hot potato: the catch time follows the teacher', () => {
+    const game = gameById('hotpotato');
+    const ctx = tuned(game, { hold: 45, shortest: 10, longest: 10 }, { count: 3 });
+    const s = game.create(ctx);
+    assert.equal(s.due, ctx.now + 10_000, 'a fixed 10-second fuse');
+    ctx.now = s.due - 1000;
+    game.chat(s, ctx, s.holder, 'What is your favourite food?');
+    assert.ok(s.due >= ctx.now + 45_000, 'the new holder gets 45 seconds');
+});
+
+for (const game of GAMES) {
+    test(`${game.id}: plays to the end with every setting at its lowest`, () => {
+        const lowest = Object.fromEntries(game.settings.map(setting => [setting.key, setting.min]));
+        for (const seed of [4, 5]) {
+            const s = play(game, game.min, seed, { tune: lowest });
+            assert.ok(s.over, `${game.id} ends with the lowest settings (seed ${seed})`);
+        }
+        play(game, game.max, 6, { tune: lowest, endless: true, churn: true, steps: 1500 });
+    });
+}

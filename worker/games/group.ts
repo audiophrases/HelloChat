@@ -2,7 +2,7 @@
 // then talk until everyone has chosen the same things).
 import { SCENARIOS, SPY_PLACES, type Scenario, type Thing } from '../content/words.ts';
 import type { Base, Ctx, Game, Out } from './types.ts';
-import { after, base, both, deal, finish, forLevel, has, isQuestion, nameOf, others, othersNames, pick, sample, says, seats, star, timer, wordCount } from './util.ts';
+import { after, base, both, count, deal, finish, forLevel, has, isQuestion, nameOf, others, othersNames, pick, sample, says, seats, seconds, settings, star, timer, wordCount } from './util.ts';
 
 // ---------- Find the Spy ----------
 
@@ -14,7 +14,17 @@ type Spy = Base & {
     votes: Record<string, string>; caught: boolean | null; spyWon: boolean | null;
     round: number; of: number;
 };
-const SPY_MS = { ask: 70_000, answer: 70_000, vote: 45_000, guess: 35_000, show: 9000 };
+const SPY = settings({
+    ask: seconds('Time to ask a question', 70),
+    answer: seconds('Time to answer', 70),
+    vote: seconds('Time to vote for the spy', 45),
+    guess: seconds('Time for a caught spy to guess the place', 35),
+    show: seconds('Time to see the answer', 9, 2, 60),
+    questions: count('Questions each before the vote', 2, 1, 10),
+    rounds: count('Rounds in free play', 2, 1, 20),
+});
+type SpyPhase = 'ask' | 'answer' | 'vote' | 'guess' | 'show';
+const spyMs = (ctx: Ctx, phase: SpyPhase): number => SPY.ms(ctx, phase);
 
 function dealSpy(s: Spy, ctx: Ctx): void {
     s.places = sample(SPY_PLACES, 8, ctx.rnd);
@@ -22,21 +32,21 @@ function dealSpy(s: Spy, ctx: Ctx): void {
     s.spy = pick(ctx.players, ctx.rnd).key;
     s.asker = pick(ctx.players, ctx.rnd).key;
     s.answerer = after(ctx, s.asker);
-    s.phase = 'ask'; s.asked = 0; s.total = ctx.players.length * 2;
+    s.phase = 'ask'; s.asked = 0; s.total = ctx.players.length * SPY.get(ctx, 'questions');
     s.votes = {}; s.caught = null; s.spyWon = null;
     s.round += 1;
-    s.due = ctx.now + SPY_MS.ask;
+    s.due = ctx.now + spyMs(ctx, 'ask');
 }
 
 function nextQuestion(s: Spy, ctx: Ctx): Out {
     s.asked += 1;
     if (s.asked >= s.total) {
-        s.phase = 'vote'; s.due = ctx.now + SPY_MS.vote;
+        s.phase = 'vote'; s.due = ctx.now + spyMs(ctx, 'vote');
         return { say: [{ text: '🗳️ No more questions. Who is the spy? Vote!' }] };
     }
     s.asker = has(ctx, s.answerer) ? s.answerer : after(ctx, s.asker);
     s.answerer = after(ctx, s.asker);
-    s.phase = 'ask'; s.due = ctx.now + SPY_MS.ask;
+    s.phase = 'ask'; s.due = ctx.now + spyMs(ctx, 'ask');
     return { fx: [{ to: s.asker, kind: 'turn' }] };
 }
 
@@ -49,21 +59,21 @@ function countSpyVotes(s: Spy, ctx: Ctx): Out {
     const spy = nameOf(ctx, s.spy);
     if (s.caught) {
         for (const player of ctx.players) if (s.votes[player.key] === s.spy) star(s, player.key, 2);
-        s.phase = 'guess'; s.due = ctx.now + SPY_MS.guess;
+        s.phase = 'guess'; s.due = ctx.now + spyMs(ctx, 'guess');
         return { say: [{ text: `🕵️ Caught! ${spy} is the spy. But the spy has one last chance: guess the place!`, tone: 'good' }] };
     }
     star(s, s.spy, 4); s.spyWon = true;
-    s.phase = 'show'; s.due = ctx.now + SPY_MS.show;
+    s.phase = 'show'; s.due = ctx.now + spyMs(ctx, 'show');
     return { say: [{ text: `😎 The spy escaped! It was ${spy}. The place was the ${s.place}.`, tone: 'bad' }], fx: [{ to: s.spy, kind: 'win' }] };
 }
 
 export const spy: Game<Spy> = {
-    id: 'spy', kind: 'board', title: 'Find the Spy', icon: '🕵️', min: 3, max: 4, ideal: 4, minutes: 10, levels: ['A2', 'B1'],
+    id: 'spy', kind: 'board', title: 'Find the Spy', icon: '🕵️', min: 3, max: 4, ideal: 4, minutes: 10, levels: ['A2', 'B1'], settings: SPY.list,
     blurb: 'Everyone knows the secret place… except the spy. Ask clever questions to find who is pretending!',
     how: ['You all know the secret place. The spy doesn’t!', 'Take turns: ask a question about the place, but don’t say it.', 'Vote: who is the spy?'],
     example: ['What do you wear in this place?', 'Hmm… normal clothes, I think.', 'Do you go there every week?', 'Yes, with my mum.'],
     create(ctx) {
-        const s = { ...base(), round: 0, of: 2 } as unknown as Spy;
+        const s = { ...base(), round: 0, of: SPY.get(ctx, 'rounds') } as unknown as Spy;
         dealSpy(s, ctx);
         return s;
     },
@@ -72,7 +82,7 @@ export const spy: Game<Spy> = {
         if ((s.phase === 'ask' || s.phase === 'answer') && from !== s.spy && says(text, s.place)) return { block: '🤫 Don’t say the place! The spy is listening.' };
         if (s.phase === 'ask' && from === s.asker && isQuestion(text, 3)) {
             star(s, from);
-            s.phase = 'answer'; s.due = ctx.now + SPY_MS.answer;
+            s.phase = 'answer'; s.due = ctx.now + spyMs(ctx, 'answer');
             return { fx: [{ to: s.answerer, kind: 'turn' }] };
         }
         if (s.phase === 'answer' && from === s.answerer && wordCount(text) >= 3) {
@@ -94,7 +104,7 @@ export const spy: Game<Spy> = {
             if (!place) return {};
             s.spyWon = place === s.place;
             if (s.spyWon) star(s, s.spy, 3); else for (const player of others(ctx, s.spy)) star(s, player.key, 2);
-            s.phase = 'show'; s.due = ctx.now + SPY_MS.show;
+            s.phase = 'show'; s.due = ctx.now + spyMs(ctx, 'show');
             return { say: [{ text: s.spyWon ? `😎 The spy guessed it: the ${s.place}! The spy wins.` : `🎉 Wrong! The spy said “${place}”, but it was the ${s.place}. The table wins!`, tone: s.spyWon ? 'bad' : 'good' }], fx: [{ kind: 'win' }] };
         }
         return {};
@@ -105,7 +115,7 @@ export const spy: Game<Spy> = {
         if (s.phase === 'vote') return countSpyVotes(s, ctx);
         if (s.phase === 'guess') {
             for (const player of others(ctx, s.spy)) star(s, player.key, 2);
-            s.spyWon = false; s.phase = 'show'; s.due = ctx.now + SPY_MS.show;
+            s.spyWon = false; s.phase = 'show'; s.due = ctx.now + spyMs(ctx, 'show');
             return { say: [{ text: `⏰ The spy did not guess. It was the ${s.place}. The table wins!`, tone: 'good' }] };
         }
         if (!ctx.opts.endless && s.round >= s.of) { s.over = true; s.due = null; return { fx: [{ kind: 'win' }] }; }
@@ -154,7 +164,7 @@ export const spy: Game<Spy> = {
                         cells: s.places.map((item, index) => ({ id: `p${index}`, emoji: item.emoji, label: item.word, state: show && item.word === s.place ? 'found' as const : 'free' as const, off: !(s.phase === 'guess' && amSpy) })) },
                 ...(s.phase === 'ask' || s.phase === 'answer' ? [{ w: 'meter' as const, label: 'Questions left', icon: '❓', value: left, max: s.total }] : []),
             ],
-            timer: show ? null : timer(s, SPY_MS[s.phase]),
+            timer: show ? null : timer(s, spyMs(ctx, s.phase)),
             seats: seats(s, ctx, s.phase === 'ask' ? s.asker : s.phase === 'answer' ? s.answerer : null, show ? { [s.spy]: '🕵️' } : {}),
             round: ctx.opts.endless ? undefined : { n: s.round, of: s.of },
             over: s.over ? finish(s, ctx) : null,
@@ -170,13 +180,20 @@ type Bag = Base & {
     picks: Record<string, string[]>; msgs: Record<string, number>;
     phase: 'solo' | 'agree' | 'show'; n: number; of: number; agreed: boolean; nudged: boolean;
 };
-const BAG_MS = { solo: 45_000, agree: 300_000, show: 7000 };
-const NEED = 2; // messages each, so a table cannot agree in silence
+const BAG = settings({
+    solo: seconds('Time to choose alone', 45),
+    agree: seconds('Time to talk and agree', 300),
+    show: seconds('Time to see the result', 7, 2, 60),
+    need: count('Messages each before agreeing', 2, 0, 20),  // so a table cannot agree in silence
+    rounds: count('Stories in free play', 2, 1, 20),
+});
+type BagPhase = 'solo' | 'agree' | 'show';
+const bagMs = (ctx: Ctx, phase: BagPhase): number => BAG.ms(ctx, phase);
 
 function dealBag(s: Bag, ctx: Ctx): void {
     s.sc = deal(forLevel(SCENARIOS, ctx.opts.level), s.seen, item => item.id, ctx.rnd);
     s.picks = {}; s.msgs = {}; s.phase = 'solo'; s.agreed = false; s.nudged = false; s.n += 1;
-    s.due = ctx.now + BAG_MS.solo;
+    s.due = ctx.now + bagMs(ctx, 'solo');
 }
 
 const sameSet = (a: string[], b: string[]): boolean => a.length === b.length && a.every(item => b.includes(item));
@@ -189,32 +206,33 @@ function checkAgreed(s: Bag, ctx: Ctx): Out {
     if (s.phase !== 'agree' || !ctx.players.length) return {};
     const first = s.picks[ctx.players[0].key] ?? [];
     if (first.length !== s.sc.pick || !ctx.players.every(player => sameSet(s.picks[player.key] ?? [], first))) return {};
-    const quiet = ctx.players.filter(player => (s.msgs[player.key] ?? 0) < NEED);
+    const need = BAG.get(ctx, 'need');
+    const quiet = ctx.players.filter(player => (s.msgs[player.key] ?? 0) < need);
     if (quiet.length) {
         if (s.nudged) return {};
         s.nudged = true;
-        return { say: [{ text: `You chose the same things! But first, ${quiet.map(player => player.name).join(' and ')}: tell the table WHY (${NEED} messages each).` }] };
+        return { say: [{ text: `You chose the same things! But first, ${quiet.map(player => player.name).join(' and ')}: tell the table WHY (${need} message${need === 1 ? '' : 's'} each).` }] };
     }
     for (const player of ctx.players) star(s, player.key, 4);
-    s.agreed = true; s.phase = 'show'; s.due = ctx.now + BAG_MS.show;
+    s.agreed = true; s.phase = 'show'; s.due = ctx.now + bagMs(ctx, 'show');
     const items = s.sc.items.filter((_, index) => first.includes(`i${index}`)).map(item => `${item.emoji} ${item.word}`).join(', ');
     return { say: [{ text: `🤝 You agree! Your choice: ${items}.`, tone: 'good' }], fx: [{ kind: 'win' }] };
 }
 
 export const packbag: Game<Bag> = {
-    id: 'packbag', kind: 'board', title: 'Pack the Bag', icon: '🎒', min: 2, max: 4, ideal: 3, minutes: 8, levels: ['A1', 'A2', 'B1'],
+    id: 'packbag', kind: 'board', title: 'Pack the Bag', icon: '🎒', min: 2, max: 4, ideal: 3, minutes: 8, levels: ['A1', 'A2', 'B1'], settings: BAG.list,
     blurb: 'Choose 3 things alone. Then talk until your whole table chooses the SAME 3.',
     how: ['Read the story. Choose 3 things alone.', 'See what the others chose.', 'Talk and change your choices until you all agree!'],
     example: ['I think we need water because it is hot.', 'OK, but why did you choose the ball?', 'Because we will be bored!', 'Hmm… a knife is more useful.'],
     create(ctx) {
-        const s = { ...base(), seen: [], n: 0, of: 2 } as unknown as Bag;
+        const s = { ...base(), seen: [], n: 0, of: BAG.get(ctx, 'rounds') } as unknown as Bag;
         dealBag(s, ctx);
         return s;
     },
     chat(s, ctx, from, text) {
         if (s.over || s.phase !== 'agree' || wordCount(text) < 3) return {};
         s.msgs[from] = (s.msgs[from] ?? 0) + 1;
-        if (s.msgs[from] === NEED) star(s, from);
+        if (s.msgs[from] === BAG.get(ctx, 'need')) star(s, from);
         return checkAgreed(s, ctx);
     },
     act(s, ctx, from, act, data) {
@@ -227,18 +245,18 @@ export const packbag: Game<Bag> = {
         else picks.push(id);
         if (s.phase === 'solo') {
             if (!ctx.players.every(player => (s.picks[player.key] ?? []).length === s.sc.pick)) return {};
-            s.phase = 'agree'; s.due = ctx.now + BAG_MS.agree;
+            s.phase = 'agree'; s.due = ctx.now + bagMs(ctx, 'agree');
             return both({ say: [{ text: 'Everyone has chosen. Now look at the choices, talk, and agree on the same 3!' }] }, checkAgreed(s, ctx));
         }
         return checkAgreed(s, ctx);
     },
     tick(s, ctx) {
         if (s.over) return {};
-        if (s.phase === 'solo') { s.phase = 'agree'; s.due = ctx.now + BAG_MS.agree; return { say: [{ text: 'Time to talk! Look at the choices and agree on the same 3.' }] }; }
+        if (s.phase === 'solo') { s.phase = 'agree'; s.due = ctx.now + bagMs(ctx, 'agree'); return { say: [{ text: 'Time to talk! Look at the choices and agree on the same 3.' }] }; }
         if (s.phase === 'agree') {
             const shared = common(s, ctx).length;
             for (const player of ctx.players) star(s, player.key, shared);
-            s.phase = 'show'; s.due = ctx.now + BAG_MS.show;
+            s.phase = 'show'; s.due = ctx.now + bagMs(ctx, 'show');
             return { say: [{ text: `⏰ Time is up! You agreed on ${shared} of ${s.sc.pick}.` }] };
         }
         if (!ctx.opts.endless && s.n >= s.of) { s.over = true; s.due = null; return { fx: [{ kind: 'win' }] }; }
@@ -264,7 +282,7 @@ export const packbag: Game<Bag> = {
                     options: s.sc.items.map((item, index) => ({ id: `i${index}`, emoji: item.emoji, label: item.word, picked: mine.includes(`i${index}`),
                         ...(open ? { by: ctx.players.filter(player => (s.picks[player.key] ?? []).includes(`i${index}`)).map(player => player.key) } : {}) })) },
             ],
-            timer: s.phase === 'show' ? null : timer(s, BAG_MS[s.phase]),
+            timer: s.phase === 'show' ? null : timer(s, bagMs(ctx, s.phase)),
             seats: seats(s, ctx, null, Object.fromEntries(ctx.players.map(player => [player.key, s.phase === 'solo' ? ((s.picks[player.key] ?? []).length === s.sc.pick ? '✔' : '…') : '']))),
             round: ctx.opts.endless ? undefined : { n: s.n, of: s.of },
             over: s.over ? finish(s, ctx) : null,

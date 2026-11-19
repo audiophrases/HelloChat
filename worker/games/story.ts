@@ -2,21 +2,28 @@
 // true sentences and one lie about yourself; the table asks questions and votes).
 import { DICE, STORY_STARTS, type Thing } from '../content/words.ts';
 import type { Base, Ctx, Game, Out } from './types.ts';
-import { after, base, both, finish, has, isQuestion, nameOf, others, othersNames, sample, says, seats, shuffle, star, timer, wordCount } from './util.ts';
+import { after, base, both, count, finish, has, isQuestion, nameOf, others, othersNames, sample, says, seats, seconds, settings, shuffle, star, timer, wordCount } from './util.ts';
 
 // ---------- Story Dice ----------
 
 type Dice = Base & { dice: Thing[]; at: number; lines: { by: string; text: string }[]; turn: string; n: number };
-const WRITE_MS = 100_000;
+const DICE_T = settings({
+    write: seconds('Time to write each sentence', 100),
+    words: count('Words in a sentence', 5, 1, 20),
+    story: count('Sentences in a story (0 = 6 to 8, by table size)', 0, 0, 20),
+    end: seconds('Time to read the story before a new one', 15, 3, 120),
+});
+// Two dice for each player, between 6 and 8, unless the teacher chose how many.
+const storyLength = (ctx: Ctx): number => DICE_T.get(ctx, 'story') || Math.min(8, Math.max(6, ctx.players.length * 2));
 
 function dealDice(s: Dice, ctx: Ctx): void {
-    s.dice = sample(DICE, Math.min(8, Math.max(6, ctx.players.length * 2)), ctx.rnd);
+    s.dice = sample(DICE, Math.min(DICE.length, storyLength(ctx)), ctx.rnd);
     s.at = 0; s.lines = []; s.n += 1;
-    s.due = ctx.now + WRITE_MS;
+    s.due = ctx.now + DICE_T.ms(ctx, 'write');
 }
 
 export const storydice: Game<Dice> = {
-    id: 'storydice', kind: 'board', title: 'Story Dice', icon: '🎲', min: 2, max: 4, ideal: 3, minutes: 10, levels: ['A1', 'A2', 'B1'],
+    id: 'storydice', kind: 'board', title: 'Story Dice', icon: '🎲', min: 2, max: 4, ideal: 3, minutes: 10, levels: ['A1', 'A2', 'B1'], settings: DICE_T.list,
     blurb: 'Write a crazy story together: one sentence each, with the picture on the die.',
     how: ['Look at the picture on the die.', 'Your turn? Write the next sentence with that word.', 'Take turns until the story ends.'],
     example: ['One day, a dragon woke up very hungry.', 'It flew to town and ordered a giant pizza.', '😂 Then what?'],
@@ -28,19 +35,20 @@ export const storydice: Game<Dice> = {
     chat(s, ctx, from, text) {
         if (s.over || from !== s.turn || s.at >= s.dice.length) return {};
         const die = s.dice[s.at];
-        if (!says(text, die.word)) return wordCount(text) >= 5 ? { say: [{ to: from, text: `For the story, use the word “${die.word}” ${die.emoji} in your sentence.` }] } : {};
-        if (wordCount(text) < 5) return { say: [{ to: from, text: 'Write a full sentence for the story: 5 words or more.' }] };
+        const words = DICE_T.get(ctx, 'words');
+        if (!says(text, die.word)) return wordCount(text) >= Math.min(words, 5) ? { say: [{ to: from, text: `For the story, use the word “${die.word}” ${die.emoji} in your sentence.` }] } : {};
+        if (wordCount(text) < words) return { say: [{ to: from, text: `Write a full sentence for the story: ${words} word${words === 1 ? '' : 's'} or more.` }] };
         s.lines.push({ by: from, text: text.trim() });
         star(s, from, wordCount(text) >= 10 ? 2 : 1);
         s.at += 1;
         if (s.at >= s.dice.length) {
             for (const player of ctx.players) star(s, player.key);
-            if (ctx.opts.endless) { s.due = ctx.now + 15_000; return { say: [{ text: '📖 THE END! Read your story together. A new story starts soon.', tone: 'good' }], fx: [{ kind: 'win' }] }; }
+            if (ctx.opts.endless) { s.due = ctx.now + DICE_T.ms(ctx, 'end'); return { say: [{ text: '📖 THE END! Read your story together. A new story starts soon.', tone: 'good' }], fx: [{ kind: 'win' }] }; }
             s.over = true; s.due = null;
             return { say: [{ text: '📖 THE END! Read your story together.', tone: 'good' }], fx: [{ kind: 'win' }] };
         }
         s.turn = after(ctx, from);
-        s.due = ctx.now + WRITE_MS;
+        s.due = ctx.now + DICE_T.ms(ctx, 'write');
         return { fx: [{ to: from, kind: 'star' }, { to: s.turn, kind: 'turn' }] };
     },
     act: () => ({}),
@@ -49,24 +57,24 @@ export const storydice: Game<Dice> = {
         if (s.at >= s.dice.length) { dealDice(s, ctx); s.turn = after(ctx, s.turn); return { say: [{ text: `A new story! ${nameOf(ctx, s.turn)} starts.` }] }; }
         const slow = nameOf(ctx, s.turn);
         s.turn = after(ctx, s.turn);
-        s.due = ctx.now + WRITE_MS;
+        s.due = ctx.now + DICE_T.ms(ctx, 'write');
         return { say: [{ text: `⏰ ${slow} needs more time. ${nameOf(ctx, s.turn)}, you write the next sentence!` }], fx: [{ to: s.turn, kind: 'turn' }] };
     },
     join: () => ({}),
-    leave(s, ctx) { if (ctx.players.length && !has(ctx, s.turn)) { s.turn = ctx.players[0].key; s.due = ctx.now + WRITE_MS; } return {}; },
+    leave(s, ctx) { if (ctx.players.length && !has(ctx, s.turn)) { s.turn = ctx.players[0].key; s.due = ctx.now + DICE_T.ms(ctx, 'write'); } return {}; },
     view(s, ctx, me) {
         const mine = s.turn === me;
         const ended = s.at >= s.dice.length;
         const die = s.dice[Math.min(s.at, s.dice.length - 1)];
         return {
             now: s.over || ended ? { tone: s.over ? 'done' : 'wait', text: '📖 The End! Read your story together.', sub: s.over ? undefined : 'A new story starts soon…' }
-                : mine ? { tone: 'go', text: `✍️ Your turn! Write the next sentence with “${die.word}” ${die.emoji}.`, sub: '5 words or more. 10 words = 2 stars!' }
+                : mine ? { tone: 'go', text: `✍️ Your turn! Write the next sentence with “${die.word}” ${die.emoji}.`, sub: `${DICE_T.get(ctx, 'words')} words or more. 10 words = 2 stars!` }
                     : { tone: 'wait', text: `${nameOf(ctx, s.turn)} is writing with ${die.emoji} ${die.word}…`, sub: 'You can help with ideas in the chat.' },
             starters: mine && !ended ? STORY_STARTS[ctx.opts.level] : ['Good idea!', 'What happens next?', 'Maybe …'],
             chat: { hint: mine && !ended ? `The next sentence, with “${die.word}”` : undefined },
             board: [{ w: 'story', label: 'Our story', lines: s.lines,
                 dice: s.dice.map((item, index) => ({ emoji: item.emoji, word: item.word, state: index < s.at ? 'done' as const : index === s.at ? 'now' as const : 'next' as const })) }],
-            timer: ended ? null : timer(s, WRITE_MS),
+            timer: ended ? null : timer(s, DICE_T.ms(ctx, 'write')),
             seats: seats(s, ctx, ended ? null : s.turn),
             over: s.over ? finish(s, ctx, 'The End!') : null,
         };
@@ -84,11 +92,20 @@ type Lie = Base & {
     votes: Record<string, number>; // voter -> index into raw
     asked: Record<string, number>; ready: string[];
 };
-const MS = { write: 150_000, ask: 100_000, vote: 40_000, show: 8000 };
+const LIE = settings({
+    write: seconds('Time to write the 3 sentences', 150),
+    ask: seconds('Time to ask questions', 100),
+    vote: seconds('Time to vote', 40),
+    show: seconds('Time to see the answer', 8, 2, 60),
+    words: count('Words in each sentence', 4, 1, 20),
+    turns: count('Turns each in free play (0 = 2 for pairs, 1 for groups)', 0, 0, 10),
+});
+type LiePhase = 'write' | 'ask' | 'vote' | 'show';
+const lieMs = (ctx: Ctx, phase: LiePhase): number => LIE.ms(ctx, phase);
 
 function startTeller(s: Lie, ctx: Ctx, teller: string): void {
     s.teller = teller; s.phase = 'write'; s.raw = []; s.order = []; s.votes = {}; s.asked = {}; s.ready = [];
-    s.due = ctx.now + MS.write;
+    s.due = ctx.now + lieMs(ctx, 'write');
 }
 
 function nextTeller(s: Lie, ctx: Ctx): Out {
@@ -101,7 +118,7 @@ function nextTeller(s: Lie, ctx: Ctx): Out {
 }
 
 function reveal(s: Lie, ctx: Ctx): Out {
-    s.phase = 'show'; s.due = ctx.now + MS.show;
+    s.phase = 'show'; s.due = ctx.now + lieMs(ctx, 'show');
     const voters = others(ctx, s.teller);
     const right = voters.filter(player => s.votes[player.key] === 2);
     for (const player of right) star(s, player.key, 2);
@@ -114,23 +131,24 @@ function reveal(s: Lie, ctx: Ctx): Out {
 }
 
 export const spotlie: Game<Lie> = {
-    id: 'spotlie', kind: 'board', title: 'Spot the Lie', icon: '🤥', min: 2, max: 4, ideal: 3, minutes: 10, levels: ['A2', 'B1', 'A1'],
+    id: 'spotlie', kind: 'board', title: 'Spot the Lie', icon: '🤥', min: 2, max: 4, ideal: 3, minutes: 10, levels: ['A2', 'B1', 'A1'], settings: LIE.list,
     blurb: 'Two true sentences and one lie about you. Can your table find the lie?',
     how: ['Write 2 TRUE sentences and 1 LIE about you.', 'The others ask you questions.', 'They vote: which sentence is the lie?'],
     example: ['I have three cats.', 'Really? What are their names?', 'Luna, Coco and… Tiger.', 'Hmm! I think that is the lie.'],
     create(ctx) {
-        const s = { ...base(), told: {}, each: ctx.players.length <= 2 ? 2 : 1 } as unknown as Lie;
+        const s = { ...base(), told: {}, each: LIE.get(ctx, 'turns') || (ctx.players.length <= 2 ? 2 : 1) } as unknown as Lie;
         startTeller(s, ctx, ctx.players[0].key);
         return s;
     },
     chat(s, ctx, from, text) {
         if (s.over) return {};
         if (s.phase === 'write' && from === s.teller) {
-            if (wordCount(text) < 4) return { block: 'Write a full sentence about you (4 words or more).' };
+            const words = LIE.get(ctx, 'words');
+            if (wordCount(text) < words) return { block: `Write a full sentence about you (${words} word${words === 1 ? '' : 's'} or more).` };
             s.raw.push(text.trim());
             if (s.raw.length < 3) return { secret: true };
             s.order = shuffle([0, 1, 2], ctx.rnd);
-            s.phase = 'ask'; s.due = ctx.now + MS.ask;
+            s.phase = 'ask'; s.due = ctx.now + lieMs(ctx, 'ask');
             return { secret: true, say: [{ text: `🕵️ ${nameOf(ctx, s.teller)} wrote 3 sentences. One is a LIE! Ask questions to find it.` }] };
         }
         if (s.phase === 'ask' && from !== s.teller && isQuestion(text, 3)) {
@@ -144,7 +162,7 @@ export const spotlie: Game<Lie> = {
         if (act === 'ready' && s.phase === 'ask') {
             if (!s.ready.includes(from)) s.ready.push(from);
             if (!others(ctx, s.teller).every(player => s.ready.includes(player.key))) return {};
-            s.phase = 'vote'; s.due = ctx.now + MS.vote;
+            s.phase = 'vote'; s.due = ctx.now + lieMs(ctx, 'vote');
             return { say: [{ text: 'Time to vote: which sentence is the lie?' }] };
         }
         if (act === 'vote' && s.phase === 'vote') {
@@ -158,7 +176,7 @@ export const spotlie: Game<Lie> = {
     tick(s, ctx) {
         if (s.over) return {};
         if (s.phase === 'write') return both({ say: [{ text: `⏰ ${nameOf(ctx, s.teller)} needs more time. Next player!` }] }, nextTeller(s, ctx));
-        if (s.phase === 'ask') { s.phase = 'vote'; s.due = ctx.now + MS.vote; return { say: [{ text: 'Time to vote: which sentence is the lie?' }] }; }
+        if (s.phase === 'ask') { s.phase = 'vote'; s.due = ctx.now + lieMs(ctx, 'vote'); return { say: [{ text: 'Time to vote: which sentence is the lie?' }] }; }
         if (s.phase === 'vote') return reveal(s, ctx);
         return nextTeller(s, ctx);
     },
@@ -197,7 +215,7 @@ export const spotlie: Game<Lie> = {
                     : mine ? { w: 'sentences', label: 'Your sentences (secret)', items: s.raw.map((text, index) => ({ id: `s${index}`, text: `${index < 2 ? '✅ True' : '🤥 Lie'}: ${text}` })), off: true }
                         : { w: 'card', emoji: '🤫', label: `${teller} is writing`, title: `${step} of 3 sentences`, text: 'Two will be true. One will be a lie.' },
             ],
-            timer: s.phase === 'show' ? null : timer(s, MS[s.phase]),
+            timer: s.phase === 'show' ? null : timer(s, lieMs(ctx, s.phase)),
             seats: seats(s, ctx, s.teller),
             over: s.over ? finish(s, ctx) : null,
         };

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { HistoryPage, PrivateLine, TeacherStatus, TeacherStudent } from '../../shared/protocol';
+import type { GameInfo, GameSetting, HistoryPage, Level, PrivateLine, TeacherStatus, TeacherStudent } from '../../shared/protocol';
 import AvatarEditor from './AvatarEditor';
 import type { Api } from '../pages/Teacher';
 import { joinLink } from '../studentAuth';
@@ -118,6 +118,81 @@ export function ClassList({ status, api, flash }: Common & { status: TeacherStat
   </div>;
 }
 
+// ---------- Game times and rules ----------
+
+const UNIT: Record<GameSetting['unit'], string> = { s: 'seconds', min: 'minutes', n: '' };
+const usualFor = (setting: GameSetting, level: Level): number => (level === 'A1' && setting.a1 !== undefined ? setting.a1 : setting.def);
+const changedSettings = (game: GameInfo): number => (game.settings ?? []).filter(setting => setting.value !== undefined).length;
+const sorted = (values: Record<string, string>): string => JSON.stringify(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)));
+
+// One game's times and numbers. A field the teacher has not changed shows the usual value and follows it.
+export function GameSettingsForm({ game, level, api, flash }: Common & { game: GameInfo; level: Level }) {
+  const settings = game.settings ?? [];
+  const saved = Object.fromEntries(settings.filter(setting => setting.value !== undefined).map(setting => [setting.key, String(setting.value)]));
+  const [draft, setDraft] = useState<Record<string, string>>(saved);
+  const [busy, setBusy] = useState(false);
+  const dirty = sorted(draft) !== sorted(saved);
+  const save = async (next: Record<string, number>) => {
+    setBusy(true);
+    try {
+      await api('game-settings', { game: game.id, values: next });
+      setDraft(Object.fromEntries(Object.entries(next).map(([key, value]) => [key, String(value)])));
+      flash(Object.keys(next).length ? `${game.title}: saved. Free play and class activities use it from the next turn.` : `${game.title}: back to the usual times and rules.`);
+    } catch (cause) { flash(errorText(cause)); } finally { setBusy(false); }
+  };
+  const submit = () => {
+    const next: Record<string, number> = {};
+    for (const setting of settings) {
+      const text = draft[setting.key];
+      if (text === undefined || text.trim() === '' || !Number.isFinite(Number(text))) continue;
+      next[setting.key] = Math.min(setting.max, Math.max(setting.min, Math.round(Number(text))));
+    }
+    void save(next);
+  };
+  return <form className="t-game-settings" onSubmit={event => { event.preventDefault(); submit(); }}>
+    {settings.map(setting => {
+      const usual = usualFor(setting, level);
+      const changed = draft[setting.key] !== undefined;
+      const id = `gs-${game.id}-${setting.key}`;
+      return <div key={setting.key} className={`t-setting${changed ? ' changed' : ''}`}>
+        <label htmlFor={id}>{setting.label}</label>
+        <span className="t-setting-input">
+          <input id={id} className="input-field" type="number" inputMode="numeric" min={setting.min} max={setting.max} step={1}
+            value={draft[setting.key] ?? String(usual)} onChange={event => { const text = event.target.value; setDraft(current => ({ ...current, [setting.key]: text })); }} />
+          <small>{UNIT[setting.unit]}</small>
+        </span>
+        <span className="t-setting-usual">
+          {changed ? <button type="button" className="link-btn" title={`Back to the usual ${usual}`} onClick={() => setDraft(current => { const rest = { ...current }; delete rest[setting.key]; return rest; })}>↺ usual: {usual}</button>
+            : <small className="muted">usual{setting.a1 !== undefined ? ` (A1: ${setting.a1}, others: ${setting.def})` : ''}</small>}
+        </span>
+      </div>;
+    })}
+    <div className="t-setting-actions">
+      <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !dirty}>Save {game.title}</button>
+      {changedSettings(game) > 0 && <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void save({})}>↺ All back to usual</button>}
+      <small className="muted">For free play and class activities, in every class. Games already running change from the next turn.</small>
+    </div>
+  </form>;
+}
+
+function GameSettings({ status, api, flash }: Common & { status: TeacherStatus }) {
+  const [picked, setPicked] = useState(status.games[0]?.id ?? '');
+  const game = status.games.find(item => item.id === picked) ?? status.games[0];
+  const groups: [string, string][] = [['warmup', 'Warm-ups'], ['board', 'Board games'], ['quest', 'Side quests']];
+  if (!game) return null;
+  return <>
+    <p className="muted">How long students have for each step, and how many words, turns or rounds each game asks for.</p>
+    <label className="t-setting-game">Game{' '}
+      <select value={game.id} onChange={event => setPicked(event.target.value)}>
+        {groups.map(([kind, title]) => <optgroup key={kind} label={title}>
+          {status.games.filter(item => item.kind === kind).map(item => <option key={item.id} value={item.id}>{item.icon} {item.title}{changedSettings(item) ? ' (changed)' : ''}</option>)}
+        </optgroup>)}
+      </select>
+    </label>
+    <GameSettingsForm key={game.id} game={game} level={status.level} api={api} flash={flash} />
+  </>;
+}
+
 export function LessonControls({ status, api, flash }: Common & { status: TeacherStatus }) {
   const [words, setWords] = useState('');
   const [phrase, setPhrase] = useState('');
@@ -143,6 +218,7 @@ export function LessonControls({ status, api, flash }: Common & { status: Teache
     {status.blocked.repeats.map(repeat => <div className="t-repeat" key={repeat.key}><p><b>{repeat.students.length} students are repeating “{repeat.words}”.</b> Block it for this lesson?</p><p className="muted">{repeat.examples.join(' · ')}</p><button className="btn" disabled={!status.open} onClick={() => void act('words', { words: [repeat.words] })}>Block phrase</button> <button className="btn" onClick={() => void act('allow-repeat', repeat)}>Leave it alone</button></div>)}
     <details id="heard-something" onToggle={e => setHeardOpen(e.currentTarget.open)}><summary>Heard something?</summary><p className="muted">Playback reported by students’ devices in the last 15 minutes.</p><input className="input-field" type="search" value={phrase} aria-label="Find a phrase read aloud" placeholder="Type the phrase you heard…" onChange={e => setPhrase(e.target.value)} />{error && <p role="alert">{error}</p>}<div className="t-private">{plays.map(play => <p key={play.id}><q>{play.text}</q> — {play.name} · {new Date(play.ts).toLocaleTimeString()} <button className="btn btn-sm" onClick={() => void act('sound', { key: play.key, off: true })}>Silence device</button></p>)}{!plays.length && <p>No matching playback.</p>}</div></details>
     <details id="message-history" onToggle={e => setHistoryOpen(e.currentTarget.open)}><summary>Search message history</summary>{historyOpen && <History api={api} flash={flash} />}</details>
+    <details id="game-settings"><summary>⏱ Game times and rules{status.games.some(game => changedSettings(game) > 0) ? ` (${status.games.filter(game => changedSettings(game) > 0).length} changed)` : ''}</summary><GameSettings status={status} api={api} flash={flash} /></details>
     <details id="saved-classes"><summary>Classes: {status.classes.find(item => item.id === status.activeClass)?.name}</summary><p className="muted">Each class keeps its PIN and link for good. Progress and history are saved when you switch; close the class first.</p><ClassList status={status} api={api} flash={flash} /></details>
   </section>;
 }

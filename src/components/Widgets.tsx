@@ -181,7 +181,7 @@ export default function Board({ widgets, members, me, act }: { widgets: Widget[]
             <span className="w-potato" aria-hidden="true">{widget.holder === member.key ? (widget.boom ? '💥' : '🥔') : ''}</span>
             <span className="face-lg"><Face player={member.look} name={member.name} /></span>
             <span>{member.key === me ? 'You' : member.name}</span>
-            <span className="w-lives">{'❤️'.repeat(Math.max(0, widget.lives[member.key] ?? 0))}{'🤍'.repeat(Math.max(0, 3 - (widget.lives[member.key] ?? 0)))}</span>
+            <span className="w-lives">{'❤️'.repeat(Math.max(0, widget.lives[member.key] ?? 0))}{'🤍'.repeat(Math.max(0, (widget.max ?? 3) - (widget.lives[member.key] ?? 0)))}</span>
           </div>)}
         </section>;
         case 'answer': return <Answer key={index} widget={widget} {...props} />;

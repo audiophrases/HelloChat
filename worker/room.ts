@@ -73,6 +73,7 @@ export type TeacherAction =
     | { kind: 'setting'; name: 'free' | 'soundOff' | 'secretNames'; on: boolean }
     | { kind: 'level'; level: Level }
     | { kind: 'custom'; text: string }
+    | { kind: 'gameSettings'; game: string; values: Record<string, number> }
     | { kind: 'mute'; key: string; on: boolean } | { kind: 'sound'; key: string; off: boolean }
     | { kind: 'remove'; line: string }
     | { kind: 'say'; to: 'all' | 'table' | 'student'; id?: string; text: string }
@@ -175,6 +176,8 @@ export class ChatRoom extends DurableObject<Env> {
     private lesson(): number { return Number(this.setting('lesson') ?? 0); }
     private freePlay(): boolean { return this.setting('free') !== '0'; }
     private level(): Level { const level = this.setting('level'); return level === 'A1' || level === 'B1' ? level : 'A2'; }
+    // The teacher's own times and numbers for each game, kept for every class: game id -> setting -> value.
+    private tuning(): Record<string, Record<string, number>> { return this.json<Record<string, Record<string, number>>>('game_settings', {}); }
     private custom(): string[] {
         return (this.setting('custom') ?? '').split('\n').map(line => line.trim()).filter(line => line.length >= 5 && line.length <= 200 && !chatProblem(line)).slice(0, 60);
     }
@@ -351,7 +354,7 @@ export class ChatRoom extends DurableObject<Env> {
         const level = game.levels.includes(wanted) ? wanted : game.levels[0];
         const custom = this.custom();
         const topic = options.topic === 'custom' && !custom.length ? 'mix' : options.topic ?? 'mix';
-        return { level, topic, custom, endless };
+        return { level, topic, custom, endless, tune: { ...this.tuning()[game.id] } };
     }
 
     private openTable(game: Game, members: string[], opts: Opts, free: boolean): Table {
@@ -1139,6 +1142,19 @@ export class ChatRoom extends DurableObject<Env> {
                 break;
             case 'level': this.saveSetting('level', action.level); break;
             case 'custom': this.saveSetting('custom', action.text.slice(0, 12_000)); break;
+            case 'gameSettings': {
+                const tuning = this.tuning();
+                if (Object.keys(action.values).length) tuning[action.game] = action.values; else delete tuning[action.game];
+                this.saveSetting('game_settings', JSON.stringify(tuning));
+                // Tables already playing it take the new values from their next turn or timer.
+                for (const table of this.tables.values()) {
+                    if (table.game !== action.game) continue;
+                    table.opts = { ...table.opts, tune: { ...action.values } };
+                    this.saveTable(table);
+                    for (const key of table.members) this.sendTable(key, table);
+                }
+                break;
+            }
             case 'mute':
                 if (action.on) this.sql.exec('INSERT OR IGNORE INTO mutes (student_key) VALUES (?)', action.key); else this.sql.exec('DELETE FROM mutes WHERE student_key = ?', action.key);
                 this.send(action.key, { t: 'muted', muted: action.on });
@@ -1242,9 +1258,11 @@ export class ChatRoom extends DurableObject<Env> {
             'SELECT id, ts, title, members, text, starred, table_id FROM reports WHERE lesson = ? ORDER BY ts DESC LIMIT 40', lesson).toArray()
             .map(row => ({ id: row.id, ts: row.ts, quest: row.title, names: (JSON.parse(row.members) as string[]).map(key => names.get(key) ?? 'Student'), text: row.text, starred: !!row.starred, table: row.table_id }));
         const game = this.session ? gameById(this.session.game) : null;
+        const tuning = this.tuning();
         return {
             open: this.isOpen(), pin: this.classPin(), free: this.freePlay(), soundOff: this.setting('sound_all_off') === '1', secretNames: this.setting('secret_names') === '1',
-            level: this.level(), ai: !!this.env.OPENAI_API_KEY, games: GAMES.map(info),
+            level: this.level(), ai: !!this.env.OPENAI_API_KEY,
+            games: GAMES.map(game => ({ ...info(game), settings: game.settings.map(setting => ({ ...setting, ...(tuning[game.id]?.[setting.key] !== undefined ? { value: tuning[game.id][setting.key] } : {}) })) })),
             topics: [{ id: 'mix', title: 'A mix of topics', emoji: '🎲' }, ...TOPICS.map(topic => ({ id: topic.id, title: topic.title, emoji: topic.emoji })), ...(this.custom().length ? [{ id: 'custom', title: `My questions (${this.custom().length})`, emoji: '📝' }] : [])],
             session: this.session && game ? { id: this.session.id, game: game.id, title: game.title, icon: game.icon, round: this.session.round, rounds: this.session.rounds, ends: this.session.ends, started: this.session.started } : null,
             students, tables, alerts, reports, blocked: this.blockedStatus(), classes: this.classrooms.list(), activeClass: this.classrooms.current(),

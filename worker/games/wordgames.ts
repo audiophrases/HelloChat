@@ -2,18 +2,22 @@
 // word without the forbidden ones).
 import { CATEGORIES, DESCRIBE, DICE, TABOO, type Category, type Taboo, type Thing } from '../content/words.ts';
 import type { Base, Ctx, Game, Out } from './types.ts';
-import { after, answerKey, base, both, deal, finish, forLevel, has, isQuestion, nameOf, othersNames, sample, says, saysAny, seats, star, timer, wordCount } from './util.ts';
+import { after, answerKey, base, both, count, deal, finish, forLevel, has, isQuestion, nameOf, othersNames, sample, says, saysAny, seats, seconds, settings, star, timer, wordCount } from './util.ts';
 
 // ---------- Name 10! ----------
 
 type Item = { id: string; text: string; by: string; ask: boolean };
 type Name10 = Base & { cat: Category; seen: string[]; items: Item[]; goal: number; n: number; of: number; phase: 'play' | 'next'; got: number };
-const LIST_MS = 100_000;
+const LIST = settings({
+    list: seconds('Time for each list', 100),
+    goal: count('Things to name', 10, 3, 30),
+    rounds: count('Lists in free play', 3, 1, 20),
+});
 
 function dealList(s: Name10, ctx: Ctx): void {
     s.cat = deal(forLevel(CATEGORIES, ctx.opts.level), s.seen, category => category.id, ctx.rnd);
     s.items = []; s.phase = 'play'; s.n += 1;
-    s.due = ctx.now + LIST_MS;
+    s.due = ctx.now + LIST.ms(ctx, 'list');
 }
 const counted = (s: Name10): number => s.items.filter(item => !item.ask).length;
 
@@ -25,12 +29,12 @@ function listDone(s: Name10, ctx: Ctx): Out {
 }
 
 export const name10: Game<Name10> = {
-    id: 'name10', kind: 'warmup', title: 'Name 10!', icon: '🔟', min: 2, max: 4, ideal: 3, minutes: 4, levels: ['A1', 'A2', 'B1'],
+    id: 'name10', kind: 'warmup', title: 'Name 10!', icon: '🔟', min: 2, max: 4, ideal: 3, minutes: 4, levels: ['A1', 'A2', 'B1'], settings: LIST.list,
     blurb: 'A race against the clock: name 10 things together, one word in each message.',
     how: ['Read the topic.', 'Write one thing in each message.', 'Get 10 together before the time ends!'],
     example: ['fridge', 'spoon', 'a big table', 'Is a cat OK? 😄'],
     create(ctx) {
-        const s = { ...base(), seen: [], items: [], goal: 10, n: 0, of: 3, got: 0 } as unknown as Name10;
+        const s = { ...base(), seen: [], items: [], goal: LIST.get(ctx, 'goal'), n: 0, of: LIST.get(ctx, 'rounds'), got: 0 } as unknown as Name10;
         dealList(s, ctx);
         return s;
     },
@@ -76,7 +80,7 @@ export const name10: Game<Name10> = {
                 { w: 'card', emoji: s.cat.emoji, label: `Name ${s.goal}…`, title: s.cat.title },
                 { w: 'items', goal: s.goal, act: 'ok', items: s.items.map(item => ({ id: item.id, text: item.text, by: item.by, ...(item.ask ? { ask: true } : {}) })) },
             ],
-            timer: s.phase === 'play' ? timer(s, LIST_MS) : null,
+            timer: s.phase === 'play' ? timer(s, LIST.ms(ctx, 'list')) : null,
             seats: seats(s, ctx),
             round: ctx.opts.endless ? undefined : { n: s.n, of: s.of },
             over: s.over ? finish(s, ctx) : null,
@@ -91,21 +95,27 @@ type Emoji = Base & {
     dice: Thing[]; seen: string[]; lines: Record<string, string>; votes: Record<string, string>; asked: string[];
     phase: 'write' | 'vote' | 'talk' | 'next'; n: number; of: number;
 };
-const WRITE_MS = 100_000;
+const EMOJI = settings({
+    write: seconds('Time to write the sentence', 100),
+    vote: seconds('Time to vote (3 or 4 players)', 40),
+    talk: seconds('Time to ask about the stories', 50),
+    words: count('Words in the sentence', 5, 1, 20),
+    rounds: count('Stories in free play', 3, 1, 20),
+});
 
 function dealEmoji(s: Emoji, ctx: Ctx): void {
     s.dice = sample(DICE.filter(die => !s.seen.includes(die.word)), 3, ctx.rnd);
     if (s.dice.length < 3) { s.seen = []; s.dice = sample(DICE, 3, ctx.rnd); }
     s.seen.push(...s.dice.map(die => die.word));
     s.lines = {}; s.votes = {}; s.asked = []; s.phase = 'write'; s.n += 1;
-    s.due = ctx.now + WRITE_MS;
+    s.due = ctx.now + EMOJI.ms(ctx, 'write');
 }
 
 function showStories(s: Emoji, ctx: Ctx): Out {
     const writers = ctx.players.filter(player => s.lines[player.key]);
     const say = writers.map(player => ({ text: `📖 ${player.name}: ${s.lines[player.key]}` }));
-    if (writers.length >= 3) { s.phase = 'vote'; s.due = ctx.now + 40_000; }
-    else if (writers.length) { s.phase = 'talk'; s.due = ctx.now + 50_000; }
+    if (writers.length >= 3) { s.phase = 'vote'; s.due = ctx.now + EMOJI.ms(ctx, 'vote'); }
+    else if (writers.length) { s.phase = 'talk'; s.due = ctx.now + EMOJI.ms(ctx, 'talk'); }
     else { s.phase = 'next'; s.due = ctx.now + 2000; }
     return { say };
 }
@@ -121,12 +131,12 @@ function countVotes(s: Emoji, ctx: Ctx): Out {
 }
 
 export const emojistory: Game<Emoji> = {
-    id: 'emojistory', kind: 'warmup', title: 'Emoji Story', icon: '📖', min: 2, max: 4, ideal: 3, minutes: 5, levels: ['A1', 'A2', 'B1'],
+    id: 'emojistory', kind: 'warmup', title: 'Emoji Story', icon: '📖', min: 2, max: 4, ideal: 3, minutes: 5, levels: ['A1', 'A2', 'B1'], settings: EMOJI.list,
     blurb: 'Three pictures, one sentence. Whose tiny story is the funniest?',
     how: ['Look at the 3 pictures.', 'Write ONE sentence with them. It is secret!', 'Read all the stories and choose your favourite.'],
     example: ['The dragon ate a pizza on the moon.', '😂 Why was the dragon on the moon?', 'Because it was hungry!'],
     create(ctx) {
-        const s = { ...base(), seen: [], n: 0, of: 3 } as unknown as Emoji;
+        const s = { ...base(), seen: [], n: 0, of: EMOJI.get(ctx, 'rounds') } as unknown as Emoji;
         dealEmoji(s, ctx);
         return s;
     },
@@ -134,8 +144,9 @@ export const emojistory: Game<Emoji> = {
         if (s.over) return {};
         if (s.phase === 'write' && !s.lines[from]) {
             const used = s.dice.filter(die => says(text, die.word)).length;
-            if (wordCount(text) < 5 || used < 2) {
-                return { block: used < 2 ? `Use the picture words in your sentence: ${s.dice.map(die => die.word).join(', ')}.` : 'Write a longer sentence (5 words or more).' };
+            const words = EMOJI.get(ctx, 'words');
+            if (wordCount(text) < words || used < 2) {
+                return { block: used < 2 ? `Use the picture words in your sentence: ${s.dice.map(die => die.word).join(', ')}.` : `Write a longer sentence (${words} words or more).` };
             }
             s.lines[from] = text.trim();
             star(s, from, used === 3 ? 2 : 1);
@@ -193,7 +204,7 @@ export const emojistory: Game<Emoji> = {
                 ...(s.phase === 'vote' ? [{ w: 'options' as const, act: 'vote', label: 'Your favourite', cols: 1,
                     options: ctx.players.filter(player => s.lines[player.key] && player.key !== me).map(player => ({ id: player.key, label: s.lines[player.key], face: player.key, picked: s.votes[me] === player.key })) }] : []),
             ],
-            timer: s.phase === 'write' ? timer(s, WRITE_MS) : null,
+            timer: s.phase === 'write' ? timer(s, EMOJI.ms(ctx, 'write')) : null,
             seats: seats(s, ctx, null, Object.fromEntries(ctx.players.map(player => [player.key, s.phase === 'write' ? (s.lines[player.key] ? '✔' : '✍️') : '']))),
             round: ctx.opts.endless ? undefined : { n: s.n, of: s.of },
             over: s.over ? finish(s, ctx) : null,
@@ -214,21 +225,25 @@ type Dont = Base & {
     describer: string; card: Taboo; seen: string[]; score: number; got: number; skips: number;
     turn: number; turns: number; phase: 'play' | 'between';
 };
-const TURN_MS = 90_000;
+const DONT = settings({
+    turn: seconds('Time for each describer', 90),
+    skips: count('Skips per turn', 2, 0, 10),
+    turns: count('Turns each in free play', 2, 1, 10),
+});
 
 function dealWord(s: Dont, ctx: Ctx): void {
     s.card = deal(forLevel(TABOO, ctx.opts.level), s.seen, card => card.word, ctx.rnd);
 }
 
 export const dontsayit: Game<Dont> = {
-    id: 'dontsayit', kind: 'board', title: 'Don’t Say It!', icon: '🚫', min: 2, max: 4, ideal: 3, minutes: 8, levels: ['A1', 'A2', 'B1'],
+    id: 'dontsayit', kind: 'board', title: 'Don’t Say It!', icon: '🚫', min: 2, max: 4, ideal: 3, minutes: 8, levels: ['A1', 'A2', 'B1'], settings: DONT.list,
     blurb: 'Describe the secret word, but the red words are forbidden. Your team guesses!',
     how: ['One player sees a secret word.', 'Describe it. Don’t use the red words!', 'The others type the word. How many can you get?'],
     example: ['It is a place. Children go there.', 'A park?', 'No. There are teachers and books.', 'School!'],
     create(ctx) {
-        const s = { ...base(), describer: ctx.players[0].key, seen: [], score: 0, got: 0, skips: 0, turn: 1, turns: Math.max(4, ctx.players.length * 2), phase: 'play' } as unknown as Dont;
+        const s = { ...base(), describer: ctx.players[0].key, seen: [], score: 0, got: 0, skips: 0, turn: 1, turns: ctx.players.length * DONT.get(ctx, 'turns'), phase: 'play' } as unknown as Dont;
         dealWord(s, ctx);
-        s.due = ctx.now + TURN_MS;
+        s.due = ctx.now + DONT.ms(ctx, 'turn');
         return s;
     },
     chat(s, ctx, from, text) {
@@ -245,7 +260,7 @@ export const dontsayit: Game<Dont> = {
         return { say: [{ text: `✅ ${nameOf(ctx, from)} got it: ${word.toUpperCase()}! New word for ${nameOf(ctx, s.describer)}.`, tone: 'good' }], fx: [{ kind: 'good' }] };
     },
     act(s, ctx, from, act) {
-        if (s.over || s.phase !== 'play' || act !== 'skip' || from !== s.describer || s.skips >= 2) return {};
+        if (s.over || s.phase !== 'play' || act !== 'skip' || from !== s.describer || s.skips >= DONT.get(ctx, 'skips')) return {};
         const word = s.card.word;
         s.skips += 1;
         dealWord(s, ctx);
@@ -262,7 +277,7 @@ export const dontsayit: Game<Dont> = {
         s.describer = after(ctx, s.describer);
         s.turn += 1; s.got = 0; s.skips = 0; s.phase = 'play';
         dealWord(s, ctx);
-        s.due = ctx.now + TURN_MS;
+        s.due = ctx.now + DONT.ms(ctx, 'turn');
         return { say: [{ text: `${nameOf(ctx, s.describer)} describes now!` }], fx: [{ to: s.describer, kind: 'turn' }] };
     },
     join: () => ({}),
@@ -281,7 +296,7 @@ export const dontsayit: Game<Dont> = {
                     : mine ? { tone: 'go', text: `Describe the word to ${othersNames(ctx, me)}.`, sub: 'Don’t say the word or the red words!' }
                         : { tone: 'go', text: `Read ${describer}’s clues and type the word!`, sub: 'Guess as many times as you like. Ask questions too.' },
             starters: mine ? DESCRIBE[ctx.opts.level] : ['Is it a thing?', 'Is it a place?', 'Is it …?', 'Can you eat it?'],
-            actions: mine && s.phase === 'play' && !s.over ? [{ act: 'skip', label: `Skip ⏭ (${2 - s.skips} left)`, ghost: true }].filter(() => s.skips < 2) : [],
+            actions: mine && s.phase === 'play' && !s.over ? [{ act: 'skip', label: `Skip ⏭ (${DONT.get(ctx, 'skips') - s.skips} left)`, ghost: true }].filter(() => s.skips < DONT.get(ctx, 'skips')) : [],
             chat: { hint: mine ? 'Describe it…' : 'Guess the word…' },
             board: [
                 mine || s.over
@@ -289,7 +304,7 @@ export const dontsayit: Game<Dont> = {
                     : { w: 'card', label: `${describer} is describing…`, emoji: '❓', title: '? ? ?', text: 'Type your guess in the chat.' },
                 { w: 'meter', label: 'Words your team got', icon: '✅', value: s.score, max: Math.max(s.score, 10) },
             ],
-            timer: s.phase === 'play' ? timer(s, TURN_MS) : null,
+            timer: s.phase === 'play' ? timer(s, DONT.ms(ctx, 'turn')) : null,
             seats: seats(s, ctx, s.describer),
             round: ctx.opts.endless ? undefined : { n: s.turn, of: s.turns },
             over: s.over ? finish(s, ctx, `${s.score} words!`) : null,

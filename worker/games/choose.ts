@@ -3,24 +3,28 @@
 import { AGREE, REASONS, THIS_OR_THAT, WOULD_YOU_RATHER, type Choice } from '../content/cards.ts';
 import type { Level } from '../../shared/protocol.ts';
 import type { Base, Ctx, Game, Out } from './types.ts';
-import { base, deal, finish, forLevel, list, nameOf, othersNames, says, seats, star, timer, wordCount } from './util.ts';
+import { base, count, deal, finish, forLevel, list, nameOf, othersNames, says, seats, seconds, settings, star, timer, wordCount } from './util.ts';
 
 type State = Base & {
     card: Choice; seen: string[]; picks: Record<string, number>; said: string[];
     phase: 'pick' | 'talk' | 'next'; n: number; of: number;
 };
-const PICK_MS = 30_000;
-const TALK_MS = 90_000;
+const T = settings({
+    pick: seconds('Time to choose', 30),
+    talk: seconds('Time to talk about each card', 90),
+    words: count('Words in a reason (to win a star)', 4, 1, 15),
+    rounds: count('Cards in free play', 4, 1, 20),
+});
 
 function make(def: Pick<Game, 'id' | 'title' | 'icon' | 'blurb' | 'how' | 'example' | 'levels'>, cards: Choice[]): Game<State> {
     const deck = (level: Level) => forLevel(cards, level);
     const dealCard = (s: State, ctx: Ctx): void => {
         s.card = deal(deck(ctx.opts.level), s.seen, card => card.id, ctx.rnd);
         s.picks = {}; s.said = []; s.phase = 'pick'; s.n += 1;
-        s.due = ctx.now + PICK_MS;
+        s.due = ctx.now + T.ms(ctx, 'pick');
     };
     const reveal = (s: State, ctx: Ctx): Out => {
-        s.phase = 'talk'; s.due = ctx.now + TALK_MS;
+        s.phase = 'talk'; s.due = ctx.now + T.ms(ctx, 'talk');
         const lines = s.card.options.map((option, index) => {
             const names = ctx.players.filter(player => s.picks[player.key] === index).map(player => player.name);
             return names.length ? `${option.emoji} ${option.label}: ${list(names)}` : null;
@@ -33,14 +37,14 @@ function make(def: Pick<Game, 'id' | 'title' | 'icon' | 'blurb' | 'how' | 'examp
         return {};
     };
     return {
-        ...def, kind: 'warmup', min: 2, max: 4, ideal: 3, minutes: 5,
+        ...def, kind: 'warmup', min: 2, max: 4, ideal: 3, minutes: 5, settings: T.list,
         create(ctx) {
-            const s = { ...base(), seen: [], picks: {}, said: [], phase: 'pick', n: 0, of: 4 } as unknown as State;
+            const s = { ...base(), seen: [], picks: {}, said: [], phase: 'pick', n: 0, of: T.get(ctx, 'rounds') } as unknown as State;
             dealCard(s, ctx);
             return s;
         },
-        chat(s, _ctx, from, text) {
-            if (s.over || s.phase !== 'talk' || s.said.includes(from) || wordCount(text) < 4) return {};
+        chat(s, ctx, from, text) {
+            if (s.over || s.phase !== 'talk' || s.said.includes(from) || wordCount(text) < T.get(ctx, 'words')) return {};
             s.said.push(from);
             star(s, from, says(text, 'because') ? 2 : 1);
             // Everyone has given a reason: the card stays, so the table can go on talking until someone takes the next one.
@@ -61,7 +65,7 @@ function make(def: Pick<Game, 'id' | 'title' | 'icon' | 'blurb' | 'how' | 'examp
             if (s.over) return {};
             if (s.phase === 'pick') {
                 if (Object.keys(s.picks).length) return reveal(s, ctx);
-                s.due = ctx.now + PICK_MS; // nobody chose yet: the card waits
+                s.due = ctx.now + T.ms(ctx, 'pick'); // nobody chose yet: the card waits
                 return {};
             }
             return advance(s, ctx);
@@ -94,7 +98,7 @@ function make(def: Pick<Game, 'id' | 'title' | 'icon' | 'blurb' | 'how' | 'examp
                         options: s.card.options.map((option, index) => ({ id: String(index), emoji: option.emoji, label: option.label, picked: s.picks[me] === index,
                             ...(shown ? { by: ctx.players.filter(player => s.picks[player.key] === index).map(player => player.key) } : {}) })) },
                 ],
-                timer: s.phase === 'next' ? null : timer(s, s.phase === 'pick' ? PICK_MS : TALK_MS),
+                timer: s.phase === 'next' ? null : timer(s, T.ms(ctx, s.phase === 'pick' ? 'pick' : 'talk')),
                 seats: seats(s, ctx, null, Object.fromEntries(ctx.players.map(player => [player.key, s.phase === 'pick' ? (s.picks[player.key] !== undefined ? '✔' : '…') : s.said.includes(player.key) ? '💬' : '']))),
                 round: ctx.opts.endless ? undefined : { n: s.n, of: s.of },
                 over: s.over ? finish(s, ctx) : null,

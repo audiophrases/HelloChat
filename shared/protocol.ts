@@ -42,7 +42,7 @@ export type Widget =
     // Hearts, questions left, a score.
     | { w: 'meter'; label: string; value: number; max: number; icon: string }
     // The potato and who holds it.
-    | { w: 'bomb'; holder: string; lives: Record<string, number>; boom?: boolean }
+    | { w: 'bomb'; holder: string; lives: Record<string, number>; max?: number; boom?: boolean }
     // A box for the table's written answer.
     | { w: 'answer'; act: string; label: string; placeholder: string; min: number; max: number; hint?: string }
     // Numbered sentences (two truths and a lie).
@@ -76,7 +76,15 @@ export type Line = {
     reacts?: Record<string, string[]>; // emoji -> student keys
 };
 
-export type GameInfo = { id: string; kind: Kind; title: string; icon: string; blurb: string; min: number; max: number; minutes: number; how: string[]; example: string[]; levels: Level[] };
+// A number the teacher can change for a game: a time, or how many of something. `value` is the teacher's own.
+export type GameSetting = {
+    key: string; label: string;
+    unit: 's' | 'min' | 'n';
+    def: number; a1?: number;    // the usual value, and a different one for A1 tables
+    min: number; max: number;
+    value?: number;
+};
+export type GameInfo = { id: string; kind: Kind; title: string; icon: string; blurb: string; min: number; max: number; minutes: number; how: string[]; example: string[]; levels: Level[]; settings?: GameSetting[] };
 
 export type TableInfo = {
     id: string; game: GameInfo; members: Member[]; lines: Line[]; view: View;

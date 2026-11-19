@@ -125,6 +125,17 @@ function teacherAction(path: string, method: string, body: any): TeacherAction |
         case '/api/teacher/setting': return ['free', 'soundOff', 'secretNames'].includes(body?.name) && typeof body?.on === 'boolean' ? { kind: 'setting', name: body.name, on: body.on } : null;
         case '/api/teacher/level': return LEVELS.includes(body?.level) ? { kind: 'level', level: body.level } : null;
         case '/api/teacher/custom': return text(body?.text, 12_000) ? { kind: 'custom', text: body.text } : null;
+        case '/api/teacher/game-settings': {
+            const game = text(body?.game, 40) ? gameById(body.game) : undefined;
+            const values = body?.values;
+            if (!game || !values || typeof values !== 'object' || Array.isArray(values)) return null;
+            const clean: Record<string, number> = {};
+            for (const setting of game.settings) {
+                const value = values[setting.key];
+                if (typeof value === 'number' && Number.isFinite(value)) clean[setting.key] = Math.min(setting.max, Math.max(setting.min, Math.round(value)));
+            }
+            return { kind: 'gameSettings', game: game.id, values: clean };
+        }
         case '/api/teacher/mute': return text(body?.key, 128) && typeof body?.on === 'boolean' ? { kind: 'mute', key: body.key, on: body.on } : null;
         case '/api/teacher/sound': return text(body?.key, 128) && typeof body?.off === 'boolean' ? { kind: 'sound', key: body.key, off: body.off } : null;
         case '/api/teacher/remove': return text(body?.line, 64) ? { kind: 'remove', line: body.line } : null;

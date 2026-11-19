@@ -1,6 +1,6 @@
 // Small tools every game uses. No imports beyond types, so node runs them directly in the tests.
 import type { Level, View } from '../../shared/protocol.ts';
-import type { Base, Ctx, Out, Player } from './types.ts';
+import type { Base, Ctx, Out, Player, Setting } from './types.ts';
 
 export function shuffle<T>(items: readonly T[], rnd: () => number): T[] {
     const copy = [...items];
@@ -110,6 +110,27 @@ export function deal<T>(items: readonly T[], seen: string[], idOf: (item: T) => 
     const card = pick(fresh, rnd);
     seen.push(idOf(card));
     return card;
+}
+
+// ---------- What the teacher can change ----------
+
+type Spec = Omit<Setting, 'key'>;
+export const seconds = (label: string, def: number, min = 5, max = 900): Spec => ({ label, unit: 's', def, min, max });
+export const minutes = (label: string, def: number, min = 0, max = 30): Spec => ({ label, unit: 'min', def, min, max });
+export const count = (label: string, def: number, min: number, max: number, a1?: number): Spec => ({ label, unit: 'n', def, min, max, ...(a1 === undefined ? {} : { a1 }) });
+
+// A game's settings: the list for the teacher page, and the value a table plays with (the teacher's, kept within
+// limits, or the usual one for the table's level).
+export function settings<K extends string>(specs: Record<K, Spec>) {
+    const list: Setting[] = (Object.keys(specs) as K[]).map(key => ({ key, ...specs[key] }));
+    const get = (ctx: Ctx, key: K): number => {
+        const spec = specs[key];
+        const value = ctx.opts.tune?.[key];
+        if (typeof value === 'number' && Number.isFinite(value)) return Math.min(spec.max, Math.max(spec.min, Math.round(value)));
+        return ctx.opts.level === 'A1' && spec.a1 !== undefined ? spec.a1 : spec.def;
+    };
+    const ms = (ctx: Ctx, key: K): number => get(ctx, key) * (specs[key].unit === 'min' ? 60_000 : 1000);
+    return { list, get, ms };
 }
 
 // Two things the game says, one after the other.

@@ -120,6 +120,23 @@
 .t-tools summary { font-weight: 800; cursor: pointer; }
 .t-tools details > :not(summary) { margin-top: .6rem; }
 .t-tools .t-say textarea { flex: 1; min-width: 0; }
+
+/* Game times and rules: one row for each setting. */
+.t-setting-game { font-weight: 800; }
+.t-setting-game select { border: 2px solid var(--line); border-radius: 8px; padding: .2rem .4rem; background: #fff; font-weight: 700; }
+.t-game-settings { display: flex; flex-direction: column; gap: .2rem; margin-top: .5rem; max-width: 760px; }
+/* Label, box and "usual" on one line when there is room; in a narrow column the label gets its own line. */
+.t-setting { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; padding: .3rem .5rem; border-radius: 10px; }
+.t-setting label { flex: 1 1 13rem; min-width: 0; }
+.t-setting:nth-child(odd) { background: #f7f8fd; }
+.t-setting.changed { background: var(--gold-soft); }
+.t-setting label { font-weight: 700; font-size: .9rem; }
+.t-setting-input { display: inline-flex; align-items: center; gap: .35rem; }
+.t-setting-input .input-field { width: 5.5rem; padding: .3rem .5rem; border-radius: 8px; text-align: right; }
+.t-setting-input small { color: var(--ink-soft); min-width: 3.6rem; }
+.t-setting-usual { font-size: .8rem; min-width: 8.5rem; }
+.t-setting-usual .link-btn { font-size: .8rem; }
+.t-setting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; margin-top: .4rem; }
 .t-repeat { flex-basis: 100%; padding: .7rem; border-radius: 10px; background: var(--gold-soft); }
 .t-drawer { overflow-y: auto; }
 .t-drawer > * { flex-shrink: 0; }

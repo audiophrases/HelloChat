@@ -3,7 +3,7 @@
 import type { Cell, Look } from '../../shared/protocol.ts';
 import { DESCRIBE, thingSetsFor, withArticle, type Thing } from '../content/words.ts';
 import type { Base, Ctx, Game, Out } from './types.ts';
-import { base, both, finish, has, isQuestion, nameOf, othersNames, pick, sample, says, seats, shuffle, star, timer, wordCount } from './util.ts';
+import { base, both, count, finish, has, isQuestion, nameOf, othersNames, pick, sample, says, seats, seconds, settings, shuffle, star, timer, wordCount } from './util.ts';
 
 // ---------- Who am I? and Guess Who? ----------
 
@@ -21,8 +21,13 @@ type Who = Base & {
     phase: 'play' | 'show';
     round: number; of: number;
 };
-const SHOW_MS = 7000;
-const PLAY_MS = 270_000;
+const whoSettings = (rounds: number) => settings({
+    play: seconds('Time for each round', 270),
+    show: seconds('Time to see everybody’s secret', 7, 2, 60),
+    guesses: count('Wrong guesses allowed', 3, 1, 10),
+    rounds: count('Rounds in free play', rounds, 1, 20),
+});
+type WhoSettings = ReturnType<typeof whoSettings>;
 const PEOPLE = ['Mia', 'Leo', 'Zoe', 'Max', 'Ivy', 'Sam', 'Eva', 'Tom', 'Lily', 'Ben', 'Nora', 'Jack', 'Ruby', 'Finn', 'Amy', 'Luke'];
 const PEOPLE_ASK = ['Has your person got glasses?', 'Is your person wearing a hat?', 'Has your person got long hair?', 'Has your person got dark hair?', 'Is your person smiling?', 'Is your person’s top blue?', 'Has your person got a beard?', 'Has your person got big eyes?'];
 
@@ -37,7 +42,7 @@ function makePeople(ctx: Ctx): Card[] {
     }));
 }
 
-function dealWho(s: Who, ctx: Ctx): void {
+function dealWho(s: Who, ctx: Ctx, T: WhoSettings): void {
     if (s.people) {
         s.cards = makePeople(ctx);
         s.title = 'People'; s.article = false; s.ask = PEOPLE_ASK;
@@ -55,24 +60,25 @@ function dealWho(s: Who, ctx: Ctx): void {
     });
     s.done = {}; s.wrong = {}; s.crossed = {}; s.asked = {};
     s.phase = 'play'; s.round += 1;
-    s.due = ctx.now + PLAY_MS; // a round never waits for ever for a player who is away
+    s.due = ctx.now + T.ms(ctx, 'play'); // a round never waits for ever for a player who is away
 }
 
 const cardOf = (s: Who, id: string | undefined): Card | undefined => s.cards.find(card => card.id === id);
 const named = (s: Who, card: Card | undefined): string => !card ? '?' : s.people ? card.word : withArticle({ emoji: card.emoji ?? '', word: card.word }, s);
 
-function settle(s: Who, ctx: Ctx): Out {
+function settle(s: Who, ctx: Ctx, T: WhoSettings): Out {
     if (s.phase !== 'play' || !ctx.players.every(player => s.done[player.key])) return {};
-    s.phase = 'show'; s.due = ctx.now + SHOW_MS;
+    s.phase = 'show'; s.due = ctx.now + T.ms(ctx, 'show');
     return { say: [{ text: `Everybody’s secret: ${ctx.players.map(player => `${player.name} = ${cardOf(s, s.secret[player.key])?.emoji ?? ''} ${cardOf(s, s.secret[player.key])?.word ?? '?'}`).join(', ')}` }] };
 }
 
 function makeWho(def: Pick<Game, 'id' | 'kind' | 'title' | 'icon' | 'blurb' | 'how' | 'example' | 'minutes'>, people: boolean, rounds: number): Game<Who> {
+    const T = whoSettings(rounds);
     return {
-        ...def, min: 2, max: 4, ideal: 2, levels: ['A1', 'A2', 'B1'],
+        ...def, min: 2, max: 4, ideal: 2, levels: ['A1', 'A2', 'B1'], settings: T.list,
         create(ctx) {
-            const s = { ...base(), people, round: 0, of: rounds } as unknown as Who;
-            dealWho(s, ctx);
+            const s = { ...base(), people, round: 0, of: T.get(ctx, 'rounds') } as unknown as Who;
+            dealWho(s, ctx, T);
             return s;
         },
         chat(s, _ctx, from, text) {
@@ -100,13 +106,13 @@ function makeWho(def: Pick<Game, 'id' | 'kind' | 'title' | 'icon' | 'blurb' | 'h
             if (id === s.secret[target]) {
                 s.done[from] = 'right';
                 star(s, from, Math.max(1, 3 - (s.wrong[from] ?? 0)));
-                return both({ say: [{ text: `🎉 ${nameOf(ctx, from)} found out: ${nameOf(ctx, target)} is ${named(s, card)}!`, tone: 'good' }], fx: [{ to: from, kind: 'good' }] }, settle(s, ctx));
+                return both({ say: [{ text: `🎉 ${nameOf(ctx, from)} found out: ${nameOf(ctx, target)} is ${named(s, card)}!`, tone: 'good' }], fx: [{ to: from, kind: 'good' }] }, settle(s, ctx, T));
             }
             s.wrong[from] = (s.wrong[from] ?? 0) + 1;
             s.crossed[from] = [...new Set([...(s.crossed[from] ?? []), id])];
-            if (s.wrong[from] >= 3) {
+            if (s.wrong[from] >= T.get(ctx, 'guesses')) {
                 s.done[from] = 'out';
-                return both({ say: [{ to: from, text: `No more guesses! ${nameOf(ctx, target)} was ${named(s, cardOf(s, s.secret[target]))}.`, tone: 'bad' }], fx: [{ to: from, kind: 'bad' }] }, settle(s, ctx));
+                return both({ say: [{ to: from, text: `No more guesses! ${nameOf(ctx, target)} was ${named(s, cardOf(s, s.secret[target]))}.`, tone: 'bad' }], fx: [{ to: from, kind: 'bad' }] }, settle(s, ctx, T));
             }
             return { say: [{ to: from, text: `❌ Not ${named(s, card)}. Ask ${nameOf(ctx, target)} more questions!`, tone: 'bad' }], fx: [{ to: from, kind: 'bad' }] };
         },
@@ -114,10 +120,10 @@ function makeWho(def: Pick<Game, 'id' | 'kind' | 'title' | 'icon' | 'blurb' | 'h
             if (s.over) return {};
             if (s.phase === 'play') {
                 for (const player of ctx.players) s.done[player.key] ??= 'out';
-                return both({ say: [{ text: '⏰ Time is up for this round!' }] }, settle(s, ctx));
+                return both({ say: [{ text: '⏰ Time is up for this round!' }] }, settle(s, ctx, T));
             }
             if (!ctx.opts.endless && s.round >= s.of) { s.over = true; s.due = null; return { fx: [{ kind: 'win' }] }; }
-            dealWho(s, ctx);
+            dealWho(s, ctx, T);
             return { say: [{ text: 'New round: new secrets!' }] };
         },
         join(s, ctx, key) {
@@ -134,7 +140,7 @@ function makeWho(def: Pick<Game, 'id' | 'kind' | 'title' | 'icon' | 'blurb' | 'h
                     ?? ctx.players.find(other => other.key !== player.key);
                 if (next) s.target[player.key] = next.key;
             }
-            return settle(s, ctx);
+            return settle(s, ctx, T);
         },
         view(s, ctx, me) {
             const target = s.target[me];
@@ -161,9 +167,9 @@ function makeWho(def: Pick<Game, 'id' | 'kind' | 'title' | 'icon' | 'blurb' | 'h
                     { w: 'card', tone: 'secret', label: 'Only you can see this', emoji: s.people ? '🤫' : mine?.emoji, title: s.people ? `Your person: ${mine?.word ?? '?'}` : `You are ${named(s, mine)}`,
                         text: s.people ? 'Find your person in the pictures. Answer questions about them.' : 'Don’t say this word. Answer Yes or No.' },
                     { w: 'grid', cols: s.people ? 6 : 4, cells, act: 'guess', cross: true, label: s.people ? `Who is ${targetName}’s person?` : `What is ${targetName}?` },
-                    { w: 'meter', label: 'Guesses left', icon: '❤️', value: 3 - (s.wrong[me] ?? 0), max: 3 },
+                    { w: 'meter', label: 'Guesses left', icon: '❤️', value: Math.max(0, T.get(ctx, 'guesses') - (s.wrong[me] ?? 0)), max: T.get(ctx, 'guesses') },
                 ],
-                timer: s.phase === 'play' ? timer(s, PLAY_MS) : null,
+                timer: s.phase === 'play' ? timer(s, T.ms(ctx, 'play')) : null,
                 seats: seats(s, ctx, null, Object.fromEntries(ctx.players.map(player => [player.key, s.done[player.key] === 'right' ? '✔' : s.done[player.key] === 'out' ? '✖' : '']))),
                 round: ctx.opts.endless ? undefined : { n: s.round, of: s.of },
                 over: s.over ? finish(s, ctx) : null,
@@ -195,6 +201,13 @@ type Same = Base & {
     phase: 'talk' | 'show'; n: number; of: number; score: number;
 };
 
+const SAME = settings({
+    talk: seconds('Time to describe and decide', 150),
+    show: seconds('Time to see the answer', 6, 2, 60),
+    talked: count('Messages from the table before answering', 2, 0, 20),
+    rounds: count('Pictures in free play', 5, 1, 20),
+});
+
 function dealSame(s: Same, ctx: Ctx): void {
     const set = pick(thingSetsFor(ctx.opts.level), ctx.rnd);
     const [first, second] = sample(set.things, 2, ctx.rnd);
@@ -202,16 +215,16 @@ function dealSame(s: Same, ctx: Ctx): void {
     s.same = ctx.rnd() < 0.45;
     const odd = pick(ctx.players, ctx.rnd).key;
     s.cards = Object.fromEntries(ctx.players.map(player => [player.key, !s.same && player.key === odd ? second : first]));
-    s.answers = {}; s.talked = 0; s.phase = 'talk'; s.n += 1; s.due = ctx.now + 150_000;
+    s.answers = {}; s.talked = 0; s.phase = 'talk'; s.n += 1; s.due = ctx.now + SAME.ms(ctx, 'talk');
 }
 
 export const samediff: Game<Same> = {
-    id: 'samediff', kind: 'warmup', title: 'Same or Different?', icon: '🪞', min: 2, max: 3, ideal: 2, minutes: 5, levels: ['A1', 'A2', 'B1'],
+    id: 'samediff', kind: 'warmup', title: 'Same or Different?', icon: '🪞', min: 2, max: 3, ideal: 2, minutes: 5, levels: ['A1', 'A2', 'B1'], settings: SAME.list,
     blurb: 'You each have a secret picture. Describe it, don’t name it. Are they the same?',
     how: ['You have a secret picture.', 'Describe it. Don’t say the word!', 'Same or different? Decide together.'],
     example: ['Mine is an animal. It is big.', 'Mine too! Is it grey?', 'No, it is brown. It lives on a farm.'],
     create(ctx) {
-        const s = { ...base(), n: 0, of: 5, score: 0 } as unknown as Same;
+        const s = { ...base(), n: 0, of: SAME.get(ctx, 'rounds'), score: 0 } as unknown as Same;
         dealSame(s, ctx);
         return s;
     },
@@ -224,7 +237,7 @@ export const samediff: Game<Same> = {
     },
     act(s, ctx, from, act, data) {
         if (s.over || s.phase !== 'talk' || act !== 'answer') return {};
-        if (s.talked < 2) return { say: [{ to: from, text: 'Talk first! Describe your picture to your table.', tone: 'bad' }] };
+        if (s.talked < SAME.get(ctx, 'talked')) return { say: [{ to: from, text: 'Talk first! Describe your picture to your table.', tone: 'bad' }] };
         s.answers[from] = (data as { same?: unknown })?.same === true;
         if (!ctx.players.every(player => s.answers[player.key] !== undefined)) return {};
         return showSame(s, ctx);
@@ -257,7 +270,7 @@ export const samediff: Game<Same> = {
                 { w: 'card', tone: 'secret', label: 'Only you can see this', emoji: mine?.emoji, title: mine?.word ?? '?', text: 'Describe it. Don’t say this word!' },
                 ...(show ? [{ w: 'card' as const, tone: (s.answers[me] === s.same ? 'good' : 'bad') as 'good' | 'bad', title: s.answers[me] === s.same ? 'You were right! ⭐⭐' : 'Not this time!', text: ctx.players.map(player => `${player.name}: ${s.cards[player.key]?.emoji} ${s.cards[player.key]?.word}`).join('   ') }] : []),
             ],
-            timer: s.phase === 'talk' ? timer(s, 150_000) : null,
+            timer: s.phase === 'talk' ? timer(s, SAME.ms(ctx, 'talk')) : null,
             seats: seats(s, ctx, null, Object.fromEntries(ctx.players.map(player => [player.key, s.answers[player.key] !== undefined ? '✔' : '']))),
             round: ctx.opts.endless ? undefined : { n: s.n, of: s.of },
             over: s.over ? finish(s, ctx) : null,
@@ -267,7 +280,7 @@ export const samediff: Game<Same> = {
 };
 
 function showSame(s: Same, ctx: Ctx): Out {
-    s.phase = 'show'; s.due = ctx.now + 6000;
+    s.phase = 'show'; s.due = ctx.now + SAME.ms(ctx, 'show');
     const right = ctx.players.filter(player => s.answers[player.key] === s.same);
     for (const player of right) star(s, player.key, 2);
     if (right.length === ctx.players.length) s.score += 1;

@@ -4,7 +4,7 @@
 import { QUESTS, type Quest } from '../content/quests.ts';
 import type { Level } from '../../shared/protocol.ts';
 import type { Base, Ctx, Game, Out } from './types.ts';
-import { base, finish, nameOf, othersNames, says, seats, shuffle, star, timer, wordCount } from './util.ts';
+import { base, count, finish, minutes, nameOf, othersNames, says, seats, seconds, settings, shuffle, star, timer, wordCount } from './util.ts';
 
 type State = Base & {
     phase: 'choose' | 'talk' | 'next';
@@ -14,8 +14,15 @@ type State = Base & {
     role: Record<string, string>;      // each player's secret card
     answer: string | null; right: boolean;
 };
-const CHOOSE_MS = 40_000;
-const NEXT_MS = 6000;
+const T = settings({
+    choose: seconds('Time to choose a quest card', 40),
+    extra: minutes('Extra minutes on top of each card’s time', 2, 0, 30),
+    need: count('Messages each before answering', 3, 0, 20, 2),
+    answer: count('Words in a written answer', 6, 1, 40, 4),
+    tries: count('Tries at a quest with one right answer', 4, 1, 10),
+    show: seconds('Time to see the answer', 6, 2, 60),
+    rounds: count('Quests in free play', 3, 1, 20),
+});
 const ORDER: Level[] = ['A1', 'A2', 'B1'];
 
 const byId = (id: string | null): Quest | undefined => QUESTS.find(quest => quest.id === id);
@@ -38,7 +45,7 @@ function offer(s: State, ctx: Ctx): void {
     for (const quest of shuffle(pool, ctx.rnd)) { if (picked.length >= 3) break; if (!picked.includes(quest)) picked.push(quest); }
     s.offer = picked.map(quest => quest.id);
     s.phase = 'choose'; s.quest = null; s.answer = null; s.right = false;
-    s.due = ctx.now + CHOOSE_MS;
+    s.due = ctx.now + T.ms(ctx, 'choose');
 }
 
 // Every card is held by someone: with two players and three cards, one player holds two.
@@ -58,28 +65,28 @@ function start(s: State, ctx: Ctx, id: string): Out {
     const quest = byId(id);
     if (!quest) return {};
     s.quest = id; s.phase = 'talk'; s.msgs = {}; s.tries = 0;
-    s.need = ctx.opts.level === 'A1' ? 2 : 3;
+    s.need = T.get(ctx, 'need');
     dealRoles(s, ctx, quest);
-    s.due = ctx.now + Math.max(4, quest.minutes + 2) * 60_000;
+    s.due = ctx.now + Math.max(4 * 60_000, quest.minutes * 60_000 + T.ms(ctx, 'extra'));
     return { say: [{ text: `${quest.emoji} Quest: ${quest.title}` }] };
 }
 
 function complete(s: State, ctx: Ctx, quest: Quest, stars: number, line: string, tone: 'good' | 'info'): Out {
     for (const player of ctx.players) star(s, player.key, stars);
     s.done.push(quest.id); s.count += 1;
-    s.phase = 'next'; s.due = ctx.now + NEXT_MS;
+    s.phase = 'next'; s.due = ctx.now + T.ms(ctx, 'show');
     return { say: [{ text: line, tone }], fx: [{ kind: tone === 'good' ? 'win' : 'star' }] };
 }
 
 const talked = (s: State, ctx: Ctx): boolean => ctx.players.every(player => (s.msgs[player.key] ?? 0) >= s.need);
 
 export const quest: Game<State> = {
-    id: 'quest', kind: 'quest', title: 'Side Quests', icon: '🗺️', min: 2, max: 4, ideal: 2, minutes: 10, levels: ['A1', 'A2', 'B1'],
+    id: 'quest', kind: 'quest', title: 'Side Quests', icon: '🗺️', min: 2, max: 4, ideal: 2, minutes: 10, levels: ['A1', 'A2', 'B1'], settings: T.list,
     blurb: 'Pick a quest card. Share your secret clues, role-play or decide together, then write one answer.',
     how: ['Choose one quest card together.', 'Chat! Some players have secret cards to share.', 'Write ONE answer for your table.'],
     example: ['My clue says the cat is not in the kitchen.', 'Mine says kitchen, garden or bedroom!', 'And not in the garden… so it’s the bedroom!'],
     create(ctx) {
-        const s = { ...base(), msgs: {}, need: 3, tries: 0, done: [], count: 0, of: 3, role: {} } as unknown as State;
+        const s = { ...base(), msgs: {}, need: T.get(ctx, 'need'), tries: 0, done: [], count: 0, of: T.get(ctx, 'rounds'), role: {} } as unknown as State;
         offer(s, ctx);
         return s;
     },
@@ -111,11 +118,11 @@ export const quest: Game<State> = {
                 return complete(s, ctx, quest, Math.max(1, 4 - s.tries), `✅ Correct! ${nameOf(ctx, from)} wrote: “${text}”`, 'good');
             }
             s.tries += 1;
-            if (s.tries >= 4) { s.answer = text; return complete(s, ctx, quest, 1, `The answer was: ${quest.accept.map(group => group[0]).join(' + ')}. Good try!`, 'info'); }
+            if (s.tries >= T.get(ctx, 'tries')) { s.answer = text; return complete(s, ctx, quest, 1, `The answer was: ${quest.accept.map(group => group[0]).join(' + ')}. Good try!`, 'info'); }
             const part = quest.accept.length > 1 && quest.accept.some(group => group.some(word => says(text, word)));
             return { say: [{ text: `❌ “${text}” is not right yet${part ? ', but part of it is' : ''}. Share your clues again and try once more!${s.tries >= 2 && quest.hint ? ` Hint: ${quest.hint}` : ''}`, tone: 'bad' }], fx: [{ kind: 'bad' }] };
         }
-        const min = ctx.opts.level === 'A1' ? 4 : 6;
+        const min = T.get(ctx, 'answer');
         if (wordCount(text) < min) return { say: [{ to: from, text: `Write a longer answer: ${min} words or more.` }] };
         s.answer = text;
         return { ...complete(s, ctx, quest, 3, `✅ Quest complete! ${nameOf(ctx, from)} wrote: “${text}”`, 'good'), report: { quest: quest.id, title: quest.title, text, by: from } };
@@ -151,7 +158,7 @@ export const quest: Game<State> = {
                 chat: {},
                 board: s.over ? [] : [{ w: 'options', act: 'pick', cols: 3, label: 'Tap one card',
                     options: s.offer.map(id => byId(id)).filter((item): item is Quest => !!item).map(item => ({ id: item.id, emoji: item.emoji, label: item.title, sub: `${item.cat} · ${item.minutes} min` })) }],
-                timer: s.over ? null : timer(s, CHOOSE_MS),
+                timer: s.over ? null : timer(s, T.ms(ctx, 'choose')),
                 seats: seats(s, ctx),
                 round: ctx.opts.endless ? undefined : { n: Math.min(s.count + 1, s.of), of: s.of },
                 over: s.over ? finish(s, ctx, 'Quests complete!') : null,

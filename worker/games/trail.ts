@@ -2,7 +2,7 @@
 // conversation: an answer, a follow-up question from the table, and a reply.
 import { KEEP_TALKING, questionsFor } from '../content/questions.ts';
 import type { Base, Ctx, Game, Out } from './types.ts';
-import { after, base, both, deal, finish, has, isQuestion, nameOf, others, othersNames, seats, shuffle, star, timer, wordCount } from './util.ts';
+import { after, base, both, count, deal, finish, has, isQuestion, nameOf, others, othersNames, seats, seconds, settings, shuffle, star, timer, wordCount } from './util.ts';
 
 type Kind = 'start' | 'q' | 'ask' | 'all' | 'star' | 'again' | 'back' | 'end';
 type Phase = 'roll' | 'answer' | 'follow' | 'reply' | 'ask' | 'askreply' | 'all';
@@ -17,7 +17,17 @@ type Trail = Base & {
 };
 
 const EMOJI: Record<Kind, string> = { start: '🏁', q: '💬', ask: '❓', all: '👥', star: '⭐', again: '🎲', back: '↩️', end: '🏆' };
-const MS: Record<Phase, number> = { roll: 25_000, answer: 90_000, follow: 45_000, reply: 60_000, ask: 60_000, askreply: 60_000, all: 80_000 };
+const T = settings({
+    roll: seconds('Time to roll (then it rolls by itself)', 25),
+    answer: seconds('Time to answer the question', 90),
+    follow: seconds('Time for the table to ask a follow-up', 45),
+    reply: seconds('Time to answer the follow-up', 60),
+    ask: seconds('❓ square: time to ask the table', 60),
+    askreply: seconds('❓ square: time for the table to answer', 60),
+    all: seconds('👥 square: time for everyone to answer', 80),
+    words: count('Words in an answer', 5, 1, 20, 4),
+});
+const ms = (ctx: Ctx, phase: Phase): number => T.ms(ctx, phase);
 const LENGTH = 18;
 
 function layout(rnd: () => number): Trail['squares'] {
@@ -28,13 +38,13 @@ function layout(rnd: () => number): Trail['squares'] {
     return (['start', ...middle, 'end'] as Kind[]).slice(0, LENGTH).map(kind => ({ emoji: EMOJI[kind], kind }));
 }
 
-const minWords = (ctx: Ctx) => (ctx.opts.level === 'A1' ? 4 : 5);
+const minWords = (ctx: Ctx) => T.get(ctx, 'words');
 
 function nextTurn(s: Trail, ctx: Ctx): void {
     s.turn = after(ctx, s.turn);
     s.phase = 'roll'; s.card = null; s.die = null; s.answered = []; s.asker = null;
     s.turns += 1;
-    s.due = ctx.now + MS.roll;
+    s.due = ctx.now + ms(ctx, 'roll');
 }
 
 function roll(s: Trail, ctx: Ctx): Out {
@@ -55,32 +65,32 @@ function roll(s: Trail, ctx: Ctx): Out {
             nextTurn(s, ctx);
             return { say: [{ text: `${moved}: a star square! ⭐⭐`, tone: 'good' }], fx: [{ to: s.turn, kind: 'turn' }] };
         case 'again':
-            s.phase = 'roll'; s.due = ctx.now + MS.roll;
+            s.phase = 'roll'; s.due = ctx.now + ms(ctx, 'roll');
             return { say: [{ text: `${moved}: roll again!` }] };
         case 'back':
             s.pos[s.turn] = Math.max(0, s.pos[s.turn] - 2);
             nextTurn(s, ctx);
             return { say: [{ text: `${moved}: oh no, back 2 squares! ↩️`, tone: 'bad' }], fx: [{ to: s.turn, kind: 'turn' }] };
         case 'ask':
-            s.phase = 'ask'; s.card = null; s.due = ctx.now + MS.ask;
+            s.phase = 'ask'; s.card = null; s.due = ctx.now + ms(ctx, 'ask');
             return { say: [{ text: `${moved}: ${player} asks the table a question! ❓` }] };
         case 'all':
-            s.phase = 'all'; s.card = question(); s.answered = []; s.due = ctx.now + MS.all;
+            s.phase = 'all'; s.card = question(); s.answered = []; s.due = ctx.now + ms(ctx, 'all');
             return { say: [{ text: `${moved}: everyone answers! 👥 ${s.card}` }] };
         default:
-            s.phase = 'answer'; s.card = question(); s.due = ctx.now + MS.answer;
+            s.phase = 'answer'; s.card = question(); s.due = ctx.now + ms(ctx, 'answer');
             return { say: [{ text: `${moved}. Question for ${player}: ${s.card}` }] };
     }
 }
 
 export const trail: Game<Trail> = {
-    id: 'trail', kind: 'board', title: 'Question Trail', icon: '🎲', min: 2, max: 4, ideal: 3, minutes: 12, levels: ['A1', 'A2', 'B1'],
+    id: 'trail', kind: 'board', title: 'Question Trail', icon: '🎲', min: 2, max: 4, ideal: 3, minutes: 12, levels: ['A1', 'A2', 'B1'], settings: T.list,
     blurb: 'Roll the die, move, and answer the question on your square. Your table asks you more!',
     how: ['Your turn? Tap ROLL.', 'Answer the question on your square.', 'The others ask you one more question. Then the next player rolls.'],
     example: ['I usually play football on Saturdays.', 'Who do you play with?', 'I play with my cousins in the park.'],
     create(ctx) {
         return { ...base(), squares: layout(ctx.rnd), pos: Object.fromEntries(ctx.players.map(player => [player.key, 0])), turn: ctx.players[0].key, phase: 'roll',
-            die: null, card: null, seen: [], answered: [], asker: null, turns: 1, due: ctx.now + MS.roll };
+            die: null, card: null, seen: [], answered: [], asker: null, turns: 1, due: ctx.now + ms(ctx, 'roll') };
     },
     chat(s, ctx, from, text) {
         if (s.over) return {};
@@ -90,12 +100,12 @@ export const trail: Game<Trail> = {
             if (count < minWords(ctx)) return { say: [{ to: from, text: `Write a longer answer: ${minWords(ctx)} words or more.` }] };
             star(s, from, count >= 10 ? 2 : 1);
             if (ctx.players.length < 2) { nextTurn(s, ctx); return {}; }
-            s.phase = 'follow'; s.due = ctx.now + MS.follow;
+            s.phase = 'follow'; s.due = ctx.now + ms(ctx, 'follow');
             return { fx: [{ to: from, kind: 'star' }] };
         }
         if (s.phase === 'follow' && !mine && isQuestion(text, 3)) {
             star(s, from);
-            s.asker = from; s.phase = 'reply'; s.due = ctx.now + MS.reply;
+            s.asker = from; s.phase = 'reply'; s.due = ctx.now + ms(ctx, 'reply');
             return { fx: [{ to: from, kind: 'star' }, { to: s.turn, kind: 'turn' }] };
         }
         if (s.phase === 'reply' && mine && count >= 3) {
@@ -105,7 +115,7 @@ export const trail: Game<Trail> = {
         }
         if (s.phase === 'ask' && mine && isQuestion(text, 3)) {
             star(s, from);
-            s.card = text.trim(); s.phase = 'askreply'; s.due = ctx.now + MS.askreply;
+            s.card = text.trim(); s.phase = 'askreply'; s.due = ctx.now + ms(ctx, 'askreply');
             return { fx: [{ to: from, kind: 'star' }] };
         }
         if (s.phase === 'askreply' && !mine && count >= 3) {
@@ -135,7 +145,7 @@ export const trail: Game<Trail> = {
     join(s, _ctx, key) { s.pos[key] = 0; return {}; },
     leave(s, ctx) {
         if (!ctx.players.length || has(ctx, s.turn)) return {};
-        s.turn = ctx.players[0].key; s.phase = 'roll'; s.card = null; s.due = ctx.now + MS.roll;
+        s.turn = ctx.players[0].key; s.phase = 'roll'; s.card = null; s.due = ctx.now + ms(ctx, 'roll');
         return {};
     },
     view(s, ctx, me) {
@@ -169,7 +179,7 @@ export const trail: Game<Trail> = {
                 ...(s.card ? [{ w: 'card' as const, emoji: s.phase === 'all' ? '👥' : s.phase === 'askreply' ? '❓' : '💬',
                     label: s.phase === 'all' ? 'Everyone answers' : s.phase === 'askreply' ? `${player} asks` : `Question for ${player}`, title: s.card }] : []),
             ],
-            timer: timer(s, MS[s.phase]),
+            timer: timer(s, ms(ctx, s.phase)),
             seats: seats(s, ctx, s.turn),
             over: s.over ? finish(s, ctx) : null,
         };

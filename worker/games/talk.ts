@@ -1,7 +1,7 @@
 // Three warm-ups that are nothing but questions and answers: Speed Chat, Question Ping-Pong and Hot Potato.
 import { KEEP_TALKING, questionsFor, TOPICS } from '../content/questions.ts';
 import type { Base, Ctx, Game } from './types.ts';
-import { after, answerKey, base, deal, finish, has, isQuestion, nameOf, othersNames, pick, seats, star, timer, wordCount } from './util.ts';
+import { after, answerKey, base, count, deal, finish, has, isQuestion, nameOf, othersNames, pick, seats, seconds, settings, star, timer, wordCount } from './util.ts';
 
 const topicFor = (ctx: Ctx): { id: string; title: string; emoji: string; ask: string[] } => {
     if (ctx.opts.topic === 'custom' && ctx.opts.custom.length) return { id: 'custom', title: 'your teacher’s questions', emoji: '📝', ask: TOPICS[0].ask };
@@ -13,22 +13,27 @@ const topicFor = (ctx: Ctx): { id: string; title: string; emoji: string; ask: st
 // One question on the table; everyone writes three messages about it, then takes another.
 
 type Speed = Base & { q: string; seen: string[]; count: Record<string, number>; said: Record<string, string[]>; n: number; of: number; goal: number; deck: string; emoji: string; since: number };
-// A table that is stuck on a question may change it after this long; a table that has talked may change it at once.
-const SKIP_MS = 45_000;
+// A table that is stuck on a question may change it after `skip`; a table that has talked may change it at once.
+const SPEED = settings({
+    goal: count('Messages each to win a star', 3, 1, 10, 2),
+    words: count('Words in a message (to count)', 2, 1, 10),
+    skip: seconds('Wait before a stuck table can change the question', 45, 0, 600),
+    rounds: count('Questions in free play', 4, 1, 20),
+});
 const everyoneTalked = (s: Speed, ctx: Ctx): boolean => ctx.players.every(player => (s.count[player.key] ?? 0) >= s.goal);
 
 export const speedchat: Game<Speed> = {
-    id: 'speedchat', kind: 'warmup', title: 'Speed Chat', icon: '⚡', min: 2, max: 3, ideal: 2, minutes: 4, levels: ['A1', 'A2', 'B1'],
+    id: 'speedchat', kind: 'warmup', title: 'Speed Chat', icon: '⚡', min: 2, max: 3, ideal: 2, minutes: 4, levels: ['A1', 'A2', 'B1'], settings: SPEED.list,
     blurb: 'A question, a partner, three messages each. Then a new question!',
     how: ['Read the question.', 'Chat about it with your partner.', 'Write 3 messages to win a star.'],
     example: ['What do you do after school?', 'I play football. What about you?', 'I go home and play video games.'],
     create(ctx) {
-        const s: Speed = { ...base(), q: '', seen: [], count: {}, said: {}, n: 0, of: 4, goal: ctx.opts.level === 'A1' ? 2 : 3, deck: '', emoji: '', since: ctx.now };
+        const s: Speed = { ...base(), q: '', seen: [], count: {}, said: {}, n: 0, of: SPEED.get(ctx, 'rounds'), goal: SPEED.get(ctx, 'goal'), deck: '', emoji: '', since: ctx.now };
         next(s, ctx);
         return s;
     },
-    chat(s, _ctx, from, text) {
-        if (s.over || wordCount(text) < 2) return {};
+    chat(s, ctx, from, text) {
+        if (s.over || wordCount(text) < SPEED.get(ctx, 'words')) return {};
         const key = answerKey(text);
         const said = s.said[from] ??= [];
         if (said.includes(key)) return {};
@@ -39,7 +44,7 @@ export const speedchat: Game<Speed> = {
     },
     act(s, ctx, _from, act) {
         if (act !== 'next' || s.over) return {};
-        if (!everyoneTalked(s, ctx) && ctx.now - s.since < SKIP_MS) return {};
+        if (!everyoneTalked(s, ctx) && ctx.now - s.since < SPEED.ms(ctx, 'skip')) return {};
         if (!ctx.opts.endless && s.n >= s.of) { s.over = true; return { say: [{ text: 'That was the last question. Great chatting!', tone: 'good' }] }; }
         next(s, ctx);
         return { say: [{ text: `New question: ${s.q}` }] };
@@ -55,7 +60,7 @@ export const speedchat: Game<Speed> = {
                 : mine < s.goal ? { tone: 'go', text: `Chat with ${othersNames(ctx, me)} about the question.`, sub: `Write ${s.goal} messages to win a star: ${'●'.repeat(mine)}${'○'.repeat(s.goal - mine)}` }
                     : { tone: 'go', text: everyone ? 'Great! Take a new question.' : `Star won! Keep talking with ${othersNames(ctx, me)}.`, sub: 'Ask a question to keep the chat going.' },
             starters: KEEP_TALKING[ctx.opts.level],
-            actions: s.over ? [] : everyone ? [{ act: 'next', label: 'New question 🔄' }] : ctx.now - s.since >= SKIP_MS ? [{ act: 'next', label: 'Too difficult? New question 🔄', ghost: true }] : [],
+            actions: s.over ? [] : everyone ? [{ act: 'next', label: 'New question 🔄' }] : ctx.now - s.since >= SPEED.ms(ctx, 'skip') ? [{ act: 'next', label: 'Too difficult? New question 🔄', ghost: true }] : [],
             chat: {},
             board: [{ w: 'card', emoji: s.emoji, label: s.deck, title: s.q }],
             seats: seats(s, ctx, null, Object.fromEntries(ctx.players.map(player => [player.key, `${Math.min(s.count[player.key] ?? 0, s.goal)}/${s.goal}`]))),
@@ -78,17 +83,21 @@ function next(s: Speed, ctx: Ctx): void {
 // The ball moves each time its holder asks a question. Answer, then ask: how long can the rally go?
 
 type Ping = Base & { topic: string; emoji: string; ask: string[]; holder: string; hits: number; best: number; goal: number; asked: string[]; wins: number; drops: number };
-const SERVE_MS = 60_000;
-const HIT_MS = 45_000;
+const PING = settings({
+    serve: seconds('Time to serve (ask the first question)', 60),
+    hit: seconds('Time to answer and ask back', 45),
+    goal: count('Hits to win the rally', 10, 2, 40, 8),
+    drops: count('Dropped balls before a free-play game ends', 4, 1, 20),
+});
 
 export const pingpong: Game<Ping> = {
-    id: 'pingpong', kind: 'warmup', title: 'Question Ping-Pong', icon: '🏓', min: 2, max: 3, ideal: 2, minutes: 4, levels: ['A1', 'A2', 'B1'],
+    id: 'pingpong', kind: 'warmup', title: 'Question Ping-Pong', icon: '🏓', min: 2, max: 3, ideal: 2, minutes: 4, levels: ['A1', 'A2', 'B1'], settings: PING.list,
     blurb: 'Answer, then ask a new question. Every question hits the ball back!',
     how: ['You have the ball? Ask a question.', 'Your partner answers and asks you a question.', 'Don’t stop! Get 10 hits together.'],
     example: ['Do you like pizza?', 'Yes, I love it! What is your favourite food?', 'I like pasta. Can you cook?'],
     create(ctx) {
         const topic = topicFor(ctx);
-        return { ...base(), topic: topic.title, emoji: topic.emoji, ask: topic.ask, holder: ctx.players[0].key, hits: 0, best: 0, goal: ctx.opts.level === 'A1' ? 8 : 10, asked: [], wins: 0, drops: 0, due: ctx.now + SERVE_MS };
+        return { ...base(), topic: topic.title, emoji: topic.emoji, ask: topic.ask, holder: ctx.players[0].key, hits: 0, best: 0, goal: PING.get(ctx, 'goal'), asked: [], wins: 0, drops: 0, due: ctx.now + PING.ms(ctx, 'serve') };
     },
     chat(s, ctx, from, text) {
         if (s.over || from !== s.holder) return {};
@@ -99,7 +108,7 @@ export const pingpong: Game<Ping> = {
         s.hits += 1; s.best = Math.max(s.best, s.hits);
         star(s, from);
         s.holder = after(ctx, from);
-        s.due = ctx.now + HIT_MS;
+        s.due = ctx.now + PING.ms(ctx, 'hit');
         if (s.hits < s.goal) return { fx: [{ to: s.holder, kind: 'turn' }] };
         // The rally reached its goal: a bonus for everyone, and a new topic.
         for (const player of ctx.players) star(s, player.key, 2);
@@ -107,7 +116,7 @@ export const pingpong: Game<Ping> = {
         if (!ctx.opts.endless) { s.over = true; s.due = null; return { say: [{ text: `🏆 ${s.goal} hits! What a rally!`, tone: 'good' }], fx: [{ kind: 'win' }] }; }
         const topic = topicFor({ ...ctx, opts: { ...ctx.opts, topic: 'mix' } });
         Object.assign(s, { topic: topic.title, emoji: topic.emoji, ask: topic.ask, hits: 0, asked: [] });
-        s.due = ctx.now + SERVE_MS;
+        s.due = ctx.now + PING.ms(ctx, 'serve');
         return { say: [{ text: `🏆 ${s.goal} hits! New topic: ${topic.title}. Can you do it again?`, tone: 'good' }], fx: [{ kind: 'win' }] };
     },
     act: () => ({}),
@@ -116,8 +125,8 @@ export const pingpong: Game<Ping> = {
         const dropped = s.hits > 0;
         s.hits = 0; s.asked = []; s.drops += 1;
         // Outside a class round the game also ends after a few dropped balls, so no table is left waiting for ever.
-        if (!ctx.opts.endless && s.drops >= 4) { s.over = true; s.due = null; return { say: [{ text: `The game is over. Your best rally: ${s.best} hits!` }] }; }
-        s.due = ctx.now + SERVE_MS;
+        if (!ctx.opts.endless && s.drops >= PING.get(ctx, 'drops')) { s.over = true; s.due = null; return { say: [{ text: `The game is over. Your best rally: ${s.best} hits!` }] }; }
+        s.due = ctx.now + PING.ms(ctx, 'serve');
         return dropped ? { say: [{ text: `⏰ Too slow: the ball dropped! ${nameOf(ctx, s.holder)} serves again.`, tone: 'bad' }], fx: [{ kind: 'bad' }] } : {};
     },
     join: () => ({}),
@@ -137,7 +146,7 @@ export const pingpong: Game<Ping> = {
                 { w: 'card', emoji: s.emoji, label: 'Ask about', title: s.topic },
                 { w: 'rally', hits: s.hits, goal: s.goal, best: s.best, holder: s.holder, order: ctx.players.map(player => player.key) },
             ],
-            timer: timer(s, s.hits === 0 ? SERVE_MS : HIT_MS),
+            timer: timer(s, PING.ms(ctx, s.hits === 0 ? 'serve' : 'hit')),
             seats: seats(s, ctx, s.holder),
             over: s.over ? finish(s, ctx, 'What a rally!') : null,
         };
@@ -149,20 +158,32 @@ export const pingpong: Game<Ping> = {
 // Ask a question to pass the potato. Nobody knows when it goes off.
 
 type Potato = Base & { holder: string; lives: Record<string, number>; topic: string; emoji: string; ask: string[]; asked: string[]; booms: number; of: number; phase: 'play' | 'boom'; lost: string | null };
-const fuse = (ctx: Ctx) => ctx.now + 35_000 + Math.floor(ctx.rnd() * 30_000);
-// Whoever catches the potato always has this long to write a question: it never goes off sooner.
-export const POTATO_HOLD_MS = 20_000;
-const hold = (s: Potato, ctx: Ctx) => { if (s.due !== null) s.due = Math.max(s.due, ctx.now + POTATO_HOLD_MS); };
+const POTATO = settings({
+    hold: seconds('Time to ask after catching the potato', 20, 5, 120),
+    shortest: seconds('Shortest fuse (secret)', 35),
+    longest: seconds('Longest fuse (secret)', 65),
+    boom: seconds('Pause after a BOOM', 4, 1, 30),
+    lives: count('Hearts each', 3, 1, 10),
+    rounds: count('BOOMs in free play', 5, 1, 20),
+});
+// Somewhere between the shortest and the longest fuse; nobody knows when.
+const fuse = (ctx: Ctx) => {
+    const shortest = POTATO.ms(ctx, 'shortest');
+    return ctx.now + shortest + Math.floor(ctx.rnd() * Math.max(0, POTATO.ms(ctx, 'longest') - shortest));
+};
+// Whoever catches the potato always has `hold` to write a question: it never goes off sooner.
+const hold = (s: Potato, ctx: Ctx) => { if (s.due !== null) s.due = Math.max(s.due, ctx.now + POTATO.ms(ctx, 'hold')); };
 
 export const hotpotato: Game<Potato> = {
-    id: 'hotpotato', kind: 'warmup', title: 'Hot Potato', icon: '🥔', min: 2, max: 4, ideal: 3, minutes: 5, levels: ['A1', 'A2', 'B1'],
+    id: 'hotpotato', kind: 'warmup', title: 'Hot Potato', icon: '🥔', min: 2, max: 4, ideal: 3, minutes: 5, levels: ['A1', 'A2', 'B1'], settings: POTATO.list,
     blurb: 'Ask a question to pass the potato, before it goes BOOM!',
     how: ['You have the potato? Ask a question, fast!', 'The potato goes to the next player.', 'BOOM! Don’t hold it when it explodes.'],
     example: ['What is your favourite food?', 'Pizza! Do you like fish?', 'No, I don’t. Can you cook?'],
     create(ctx) {
         const topic = topicFor(ctx);
-        return { ...base(), holder: pick(ctx.players, ctx.rnd).key, lives: Object.fromEntries(ctx.players.map(player => [player.key, 3])),
-            topic: topic.title, emoji: topic.emoji, ask: topic.ask, asked: [], booms: 0, of: 5, phase: 'play', lost: null, due: fuse(ctx) };
+        const lives = POTATO.get(ctx, 'lives');
+        return { ...base(), holder: pick(ctx.players, ctx.rnd).key, lives: Object.fromEntries(ctx.players.map(player => [player.key, lives])),
+            topic: topic.title, emoji: topic.emoji, ask: topic.ask, asked: [], booms: 0, of: POTATO.get(ctx, 'rounds'), phase: 'play', lost: null, due: fuse(ctx) };
     },
     chat(s, ctx, from, text) {
         if (s.over || s.phase !== 'play' || from !== s.holder || !isQuestion(text, 3)) return {};
@@ -184,7 +205,7 @@ export const hotpotato: Game<Potato> = {
             s.due = fuse(ctx);
             return { say: [{ text: `New round! Ask about: ${s.topic}. ${nameOf(ctx, s.holder)} starts.` }] };
         }
-        s.lives[s.holder] = Math.max(0, (s.lives[s.holder] ?? 3) - 1);
+        s.lives[s.holder] = Math.max(0, (s.lives[s.holder] ?? POTATO.get(ctx, 'lives')) - 1);
         s.booms += 1; s.lost = s.holder; s.phase = 'boom';
         const out = { say: [{ text: `💥 BOOM! ${nameOf(ctx, s.holder)} had the potato.`, tone: 'bad' as const }], fx: [{ kind: 'boom' as const }] };
         if (!ctx.opts.endless && (s.booms >= s.of || s.lives[s.holder] === 0)) {
@@ -193,11 +214,11 @@ export const hotpotato: Game<Potato> = {
             s.over = true; s.due = null;
             return out;
         }
-        if (ctx.opts.endless && s.lives[s.holder] === 0) s.lives[s.holder] = 3; // nobody is ever out in a class round
-        s.due = ctx.now + 4000;
+        if (ctx.opts.endless && s.lives[s.holder] === 0) s.lives[s.holder] = POTATO.get(ctx, 'lives'); // nobody is ever out in a class round
+        s.due = ctx.now + POTATO.ms(ctx, 'boom');
         return out;
     },
-    join(s, _ctx, key) { s.lives[key] = 3; return {}; },
+    join(s, ctx, key) { s.lives[key] = POTATO.get(ctx, 'lives'); return {}; },
     leave(s, ctx) { if (!has(ctx, s.holder)) { s.holder = ctx.players[0]?.key ?? ''; if (s.phase === 'play') hold(s, ctx); } return {}; },
     view(s, ctx, me) {
         const mine = s.holder === me;
@@ -212,7 +233,7 @@ export const hotpotato: Game<Potato> = {
             chat: { hint: mine ? 'Ask a question to pass the potato?' : undefined },
             board: [
                 { w: 'card', emoji: s.emoji, label: 'Ask about', title: s.topic },
-                { w: 'bomb', holder: s.holder, lives: s.lives, boom: s.phase === 'boom' },
+                { w: 'bomb', holder: s.holder, lives: s.lives, max: POTATO.get(ctx, 'lives'), boom: s.phase === 'boom' },
             ],
             seats: seats(s, ctx, s.holder),
             round: ctx.opts.endless ? undefined : { n: Math.min(s.booms + 1, s.of), of: s.of },

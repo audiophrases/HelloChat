@@ -1,7 +1,7 @@
 // The teacher's page: open the class, start an activity for everyone with one click, and watch every table talk.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameInfo, Kind, Level, Line, StartOptions, TeacherStatus, TeacherTable } from '../../shared/protocol';
-import { StudentDrawer, LessonControls, CommandPalette, ClassList } from '../components/TeacherTools';
+import { StudentDrawer, LessonControls, CommandPalette, ClassList, GameSettingsForm } from '../components/TeacherTools';
 import Face from '../components/Face';
 import { joinLink as makeJoinLink } from '../studentAuth';
 import { copyText } from '../utils/copy';
@@ -17,6 +17,7 @@ const KINDS: { kind: Kind; title: string; note: string }[] = [
   { kind: 'quest', title: '🗺️ Side quests', note: 'Tables pick quest cards: split clues, role-plays, riddles and 200 talk tasks.' },
 ];
 const QUESTION_GAMES = ['speedchat', 'pingpong', 'hotpotato', 'trail'];
+const changedSettings = (game: GameInfo): number => (game.settings ?? []).filter(setting => setting.value !== undefined).length;
 const clock = (ms: number): string => { const seconds = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; };
 const ago = (ts: number, now: number): string => { if (!ts) return 'nothing yet'; const seconds = Math.max(0, Math.floor((now - ts) / 1000)); return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)} min ago`; };
 
@@ -109,6 +110,10 @@ function Starter({ status, api, flash }: { status: TeacherStatus; api: Api; flas
           </select>
         </label>
       </div>
+      <details className="t-custom">
+        <summary>⏱ Times and rules for {game.title}{changedSettings(game) ? ` (${changedSettings(game)} changed)` : ''}</summary>
+        <GameSettingsForm key={game.id} game={game} level={status.level} api={api} flash={flash} />
+      </details>
       <button type="button" className="btn btn-go btn-lg" disabled={online < game.min} onClick={() => void start()}>
         ▶ Start {game.title} for {online} student{online === 1 ? '' : 's'}
       </button>
