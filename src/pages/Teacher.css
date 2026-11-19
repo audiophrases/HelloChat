@@ -131,9 +131,6 @@
 .s-draft { color: #83541b; }
 .t-command-list { display: flex; flex-direction: column; gap: .3rem; max-height: 50vh; overflow-y: auto; margin: .6rem 0; }
 .t-command-list button { text-align: left; }
-.t-drawer .avatar-editor { color: var(--ink); }
-.t-drawer .control-label, .t-drawer .character-voice p { text-shadow: none; }
-.t-drawer .character-voice select { color: var(--ink); background: #fff; }
 
 /* Classes: each keeps its PIN and link for good. */
 .t-classes { display: flex; flex-direction: column; gap: .5rem; }
